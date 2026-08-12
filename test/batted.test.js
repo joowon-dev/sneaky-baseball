@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { battedFlight, battedBall, carry, travel, GRAVITY } from '../src/game/batted.js'
+import {
+  battedFlight, battedBall, carry, travel, clearsFence,
+  GRAVITY, FENCE_DIST, FENCE_H, LAUNCH_DY,
+} from '../src/game/batted.js'
 import { HOMERUN, HIT, FOUL, WHIFF } from '../src/game/judge.js'
 
 describe('battedFlight', () => {
@@ -80,12 +83,15 @@ describe('battedBall', () => {
     expect(falling.dx).toBeGreaterThan(apex.dx)
   })
 
-  it('홈런은 담장(높이 2.3배)을 넘길 만큼 나간다', () => {
-    expect(carry(flight)).toBeGreaterThan(2.3)
+  it('잘 맞은 공은 담장 거리보다 멀리 나간다', () => {
+    expect(carry(flight)).toBeGreaterThan(FENCE_DIST)
   })
 })
 
 describe('바운드', () => {
+  // 담장을 넘긴 공은 화면 밖이라 튀지도 구르지도 않는다 — 담장 앞에 떨어지는 타구로 본다.
+  const inPark = () => battedFlight(HIT, 60)
+
   /** 궤적을 촘촘히 훑어 높이의 변곡을 센다 — 떨어졌다가 다시 올라간 횟수. */
   function bounces(flight) {
     let count = 0
@@ -104,11 +110,11 @@ describe('바운드', () => {
   }
 
   it('세게 친 공은 여러 번 튄다', () => {
-    expect(bounces(battedFlight(HOMERUN, 0))).toBeGreaterThan(1)
+    expect(bounces(inPark())).toBeGreaterThan(1)
   })
 
   it('튈수록 낮아지고 간격도 짧아진다', () => {
-    const { hops } = battedFlight(HOMERUN, 0)
+    const { hops } = inPark()
     expect(hops.length).toBeGreaterThan(2)
     for (let i = 1; i < hops.length - 1; i += 1) {
       expect(hops[i + 1].vy).toBeLessThan(hops[i].vy)
@@ -117,43 +123,44 @@ describe('바운드', () => {
   })
 
   it('튀고 나면 앞으로 가는 속도도 깎인다', () => {
-    const [first, second] = battedFlight(HOMERUN, 0).hops
+    const [first, second] = inPark().hops
     expect(second.vx).toBeLessThan(first.vx)
     expect(second.vx).toBeGreaterThan(0)
   })
 
   it('약하게 맞은 공은 세게 맞은 공보다 덜 튄다', () => {
-    expect(bounces(battedFlight(FOUL, 140))).toBeLessThan(bounces(battedFlight(HOMERUN, 0)))
+    expect(bounces(battedFlight(FOUL, 140))).toBeLessThan(bounces(inPark()))
   })
 
   it('타격점이 떠 있으면 그만큼 더 떨어져 땅에 닿는다', () => {
-    const high = battedFlight(HOMERUN, 0, 0, 0.2)
-    const flat = battedFlight(HOMERUN, 0, 0, 0)
+    const high = battedFlight(HIT, 60, 0, 0.2)
+    const flat = battedFlight(HIT, 60, 0, 0)
     expect(carry(high)).toBeGreaterThan(carry(flat))
     // 땅에 닿는 순간의 높이는 타격점보다 launchDy만큼 낮다.
     expect(battedBall(high, high.hops[1].startMs).dy).toBeCloseTo(-0.2, 5)
   })
 
   it('튄 거리까지 더하면 처음 닿은 지점보다 멀리 간다', () => {
-    const flight = battedFlight(HOMERUN, 0)
+    const flight = inPark()
     expect(travel(flight)).toBeGreaterThan(carry(flight))
   })
 
   it('멈춘 뒤에는 그 자리에 서 있는다', () => {
-    const flight = battedFlight(HOMERUN, 0)
+    const flight = inPark()
     const rest = travel(flight)
     expect(battedBall(flight, flight.lifeMs).dx).toBeCloseTo(rest, 5)
-    expect(battedBall(flight, flight.lifeMs).dy).toBeCloseTo(0, 5)
+    // 땅에 닿아 있으므로 타격점보다 LAUNCH_DY 만큼 낮다.
+    expect(battedBall(flight, flight.lifeMs).dy).toBeCloseTo(-LAUNCH_DY, 5)
   })
 })
 
 describe('구르기', () => {
-  const flight = battedFlight(HOMERUN, 0)
+  const flight = battedFlight(HIT, 60)
   const { roll } = flight
 
   it('그만 튀면 땅에 붙어 굴러간다', () => {
     const mid = battedBall(flight, roll.startMs + roll.durMs / 2)
-    expect(mid.dy).toBeCloseTo(0, 5)
+    expect(mid.dy).toBeCloseTo(-LAUNCH_DY, 5)
     expect(mid.dx).toBeGreaterThan(roll.x0)
   })
 
@@ -182,5 +189,43 @@ describe('구르기', () => {
   it('멈춘 뒤 잠깐 남았다가 수명이 끝난다', () => {
     expect(flight.lifeMs).toBe(Math.round(roll.startMs + roll.durMs) + flight.fadeMs)
     expect(battedBall(flight, flight.lifeMs + 1)).toBeNull()
+  })
+})
+
+describe('담장', () => {
+  it('잘 맞은 공은 담장을 넘어간다', () => {
+    const out = battedFlight(HIT, 0)
+    expect(out.over).toBe(true)
+    expect(clearsFence(out)).toBe(true)
+  })
+
+  it('넘어간 공은 화면 밖이라 튀지도 구르지도 않는다', () => {
+    expect(battedFlight(HIT, 0).roll.durMs).toBe(0)
+  })
+
+  it('담장에 닿을 때 담장보다 낮으면 튕겨 나온다', () => {
+    const off = battedFlight(HIT, 42)
+    expect(off.over).toBe(false)
+
+    // 담장 자리에 닿는 구간이 있고, 그 다음 구간은 뒤로 간다.
+    const at = off.hops.findIndex((h, i) => i > 0 && h.x0 >= FENCE_DIST - 1e-9)
+    expect(at).toBeGreaterThan(0)
+    expect(off.hops[at].vx).toBeLessThan(0)
+  })
+
+  it('튕겨 나온 지점의 높이는 담장보다 낮다', () => {
+    const off = battedFlight(HIT, 42)
+    const at = off.hops.findIndex((h, i) => i > 0 && h.x0 >= FENCE_DIST - 1e-9)
+    expect(off.hops[at].y0).toBeLessThanOrEqual(FENCE_H)
+  })
+
+  it('담장을 못 넘고 그 앞에 떨어지는 공은 담장을 건드리지 않는다', () => {
+    const weak = battedFlight(HIT, 70)
+    expect(carry(weak)).toBeLessThan(FENCE_DIST)
+    expect(weak.hops.every((h) => h.vx > 0)).toBe(true)
+  })
+
+  it('파울은 뒤로 가니 담장과 무관하다', () => {
+    expect(battedFlight(FOUL, 120).over).toBe(false)
   })
 })

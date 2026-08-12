@@ -6,7 +6,9 @@
 //   2. 화면 좌표 — 맞은 공만. 상자를 벗어나 작업 중인 창 위로 솟구친다.
 
 import { ballPosition } from '../game/pitches.js'
-import { battedFlight, battedBall, carry, FENCE_CARRY, TIME_SCALE } from '../game/batted.js'
+import {
+  battedFlight, battedBall, FENCE_DIST, FENCE_H, LAUNCH_DY, TIME_SCALE,
+} from '../game/batted.js'
 import { READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, progress } from '../game/engine.js'
 import { HOMERUN, WHIFF, LABELS, WINDOWS } from '../game/judge.js'
 import {
@@ -26,20 +28,17 @@ const PITCHER_X = 0.87
 const BATTER_H = 0.62
 const PITCHER_H = 0.5
 
-// 담장 높이 (화면 높이 대비). 담장까지의 거리는 batted.js가 정한다 — 판정 기준이라서.
-const FENCE_H = 0.16
-
-// 화면 왼쪽 아래 구석에 놓이는 필드 상자. 작을수록 눈에 덜 띈다 —
-// 타구는 이 상자와 무관하게 화면 크기로 날아가므로 상자만 줄이면 된다.
+// 화면 왼쪽 아래 구석에 놓이는 필드 상자. 작을수록 눈에 덜 띈다.
+// 높이는 고르지 않고 물리에서 역산한다 — 타자가 딛고 선 선이 곧 타구가 튀는 땅이어야
+// 하므로, 타격점이 땅 위로 뜬 높이가 정확히 LAUNCH_DY가 되는 크기를 쓴다.
 const FIELD_W = 240
-const FIELD_H = 78
+const CONTACT_ABOVE_GROUND = 0.62 * 0.52 // 필드 높이 대비 타격점 높이 (BATTER_H × 0.52)
 const MARGIN_X = 16
 const MARGIN_Y = 8
 
-// 타구 세로 단위는 화면 높이. 가로 단위는 "퍼펙트 타이밍 홈런이 화면 오른쪽 끝에
-// 떨어지도록" 역산한다. 그러면 담장은 자연히 그 앞(화면 80% 근처)에 서고,
-// 담장을 넘긴 공은 화면 오른쪽으로 빠져나간다 — 넘어갔으니까.
-const HOMERUN_LANDING = 0.98
+// 타구 세로 단위는 화면 높이. 가로 단위는 **담장이 화면 오른쪽 끝에 붙도록** 역산한다.
+// 담장 거리·높이는 판정 기준이라 batted.js가 갖고 있다 — 그래서 보이는 대로 판정된다.
+const FENCE_EDGE = 0.97
 
 // 공 뒤에 남는 잔상의 길이 (궤적 시간 기준). 점이 아니라 한 줄로 잇는다.
 const TRAIL_MS = 130
@@ -77,7 +76,7 @@ function metrics(height) {
 /** 화면 왼쪽 아래에 붙는 필드 상자. */
 function layout(width, height) {
   const w = Math.min(FIELD_W, width - MARGIN_X * 2)
-  const h = Math.min(FIELD_H, height * 0.42)
+  const h = clamp((LAUNCH_DY * height) / CONTACT_ABOVE_GROUND, 48, height * 0.4)
   return { x: MARGIN_X, y: height - MARGIN_Y - h, w, h }
 }
 
@@ -121,19 +120,14 @@ export function draw(ctx, width, height, state, now) {
  */
 function flightSpace(field, spot, screenW, screenH) {
   const unitY = screenH
-  // 타격점이 땅에서 떠 있는 높이 — 공은 이만큼 더 떨어져야 땅에 닿고, 거기서 튄다.
-  const launchDy = (spot.ground - spot.contact.y) / unitY
   const origin = { x: field.x + spot.contact.x, y: field.y + spot.contact.y }
-  // 기준은 퍼펙트 타이밍·평범한 높이의 홈런 하나. 이게 화면 끝에 떨어진다.
-  const best = carry(battedFlight(HOMERUN, 0, 0, launchDy))
-  const unitX = (screenW * HOMERUN_LANDING - origin.x) / best
+  const fenceX = screenW * FENCE_EDGE
 
   return {
     origin,
     unitY,
-    launchDy,
-    unitX,
-    fenceX: origin.x + FENCE_CARRY * unitX,
+    fenceX,
+    unitX: (fenceX - origin.x) / FENCE_DIST,
     ground: field.y + spot.ground,
   }
 }
@@ -183,7 +177,8 @@ function drawGround(ctx, field, spot, ui, space) {
   ctx.stroke()
   ctx.stroke()
 
-  // 담장 — 이 선을 넘겨야 홈런. 판정에 쓰는 거리 그대로 세운다.
+  // 담장 — 뚫리지 않는 벽. 넘기면 홈런, 맞으면 튕겨 나온다.
+  // 판정에 쓰는 거리·높이 그대로 세운다.
   ctx.setLineDash([3 * ui.k, 4 * ui.k])
   ctx.beginPath()
   ctx.moveTo(space.fenceX, space.ground)
@@ -258,7 +253,7 @@ function drawPitchedBall(ctx, field, spot, ui, state, now) {
 function drawFlight(ctx, field, spot, ui, space, state, now) {
   const age = now - state.resultAt
   const { result, errorMs, lane } = state.lastResult
-  const flight = battedFlight(result, errorMs, lane ?? 0, space.launchDy)
+  const flight = battedFlight(result, errorMs, lane ?? 0)
 
   if (!flight) return // 헛친 공은 투구 궤적을 따라 그대로 뒤로 빠진다
 

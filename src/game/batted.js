@@ -32,11 +32,19 @@ const ROLL_DECEL = 12 // 구를 때의 감속 (필드 높이 / 초²)
 const FADE_MS = 350 // 멈춘 공이 사라지기까지
 
 /**
- * 담장까지의 거리. 타구가 이만큼 날아가면(캐리) 홈런이다.
- * 판정 기준이자 화면에 그리는 담장 선의 위치 — 둘이 같은 값이라 보이는 대로 판정된다.
- * 퍼펙트 타이밍은 2.84까지 날아가고, 20ms쯤 어긋나면 2.36으로 못 넘는다.
+ * 담장. 뚫리지 않는 벽이다 — 넘어가면 홈런, 맞으면 튕겨 나온다.
+ * 판정 기준이자 화면에 그리는 그 선이라, 보이는 대로 판정된다.
  */
-export const FENCE_CARRY = 2.3
+export const FENCE_DIST = 1.85 // 타격점에서 담장까지
+export const FENCE_H = 0.16 // 담장 높이. 여기를 넘겨야 홈런
+
+/**
+ * 타격점이 땅에서 떠 있는 높이. 공은 이만큼 더 떨어져야 땅에 닿고, 거기서 튄다.
+ * 판정에 들어가는 값이므로 상수다 — 그리는 쪽도 이 값을 그대로 써야
+ * 화면에서 담장을 넘긴 공이 홈런으로 판정된다.
+ */
+export const LAUNCH_DY = 0.023
+const WALL_BOUNCE = 0.45 // 담장에 맞고 남는 속도
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
@@ -44,10 +52,9 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
  * 타이밍 오차와 공의 높낮이로 타구를 만든다. 오차가 연속적으로 반영되므로
  * 같은 홈런도 매번 다른 궤적을 그린다. 헛스윙은 null.
  *
- * launchDy는 타격점이 땅에서 떠 있는 높이. 공은 그 높이만큼 더 떨어져야 땅에 닿고,
- * 튀는 것도 땅에서 튄다.
+ * launchDy는 타격점 높이 — 기본값(LAUNCH_DY)을 쓰면 판정과 그림이 같은 궤적을 본다.
  */
-export function battedFlight(result, errorMs, lane = 0, launchDy = 0) {
+export function battedFlight(result, errorMs, lane = 0, launchDy = LAUNCH_DY) {
   if (result === WHIFF) return null
 
   const off = clamp(errorMs ?? 0, -WINDOWS.foul, WINDOWS.foul)
@@ -61,13 +68,14 @@ export function battedFlight(result, errorMs, lane = 0, launchDy = 0) {
   const vy = speed * Math.sin(rad)
   const vx = speed * Math.cos(rad) * (result === FOUL ? FOUL_SPEED_RATIO : 1)
 
-  const hops = buildHops(vx, vy, launchDy)
-  const roll = buildRoll(hops)
+  const { hops, over } = buildPath(vx, vy, launchDy)
+  const roll = buildRoll(hops, over)
 
   return {
     vx,
     vy,
     launchDy,
+    over,
     hops,
     roll,
     lifeMs: Math.round(roll.startMs + roll.durMs) + FADE_MS,
@@ -76,45 +84,77 @@ export function battedFlight(result, errorMs, lane = 0, launchDy = 0) {
 }
 
 /**
- * 땅에 닿을 때마다 하나씩. 각 구간은 땅 높이(y=0)를 기준으로 한 포물선이다.
- * y0는 그 구간이 시작하는 높이 — 첫 구간만 타격 높이에서 시작하고 나머지는 0.
+ * 공이 땅이나 담장에 부딪힐 때마다 구간 하나. 각 구간은 땅 높이(y=0) 기준 포물선이다.
+ * y0는 그 구간이 시작하는 높이 — 첫 구간만 타격 높이에서 시작한다.
+ *
+ * 담장은 뚫리지 않는다. 담장 자리(FENCE_DIST)에 닿을 때 높이가 담장보다 낮으면
+ * 튕겨 나오고, 높으면 넘어간 것이다(over) — 그게 홈런이다.
  */
-function buildHops(vx, vy, launchDy) {
+function buildPath(vx, vy, launchDy) {
   const hops = []
   let startMs = 0
   let x = 0
   let y = launchDy
   let up = vy
   let along = vx
+  let over = false
 
   for (let i = 0; i < MAX_HOPS; i += 1) {
-    // 땅에 닿는 순간의 낙하 속도. 여기서 이번 구간의 길이가 나온다.
+    // 땅에 닿기까지 걸리는 시간.
     const impact = Math.sqrt(Math.max(0, up * up + 2 * GRAVITY * y))
-    const dur = (up + impact) / GRAVITY
+    const toGround = (up + impact) / GRAVITY
+
+    let dur = toGround
+    let hitWall = false
+
+    // 담장까지 먼저 닿는가?
+    if (along > 0 && x < FENCE_DIST) {
+      const toWall = (FENCE_DIST - x) / along
+      if (toWall < toGround) {
+        const height = y + up * toWall - 0.5 * GRAVITY * toWall * toWall
+        if (height > FENCE_H) over = true // 넘어갔다 — 홈런
+        else {
+          dur = toWall
+          hitWall = true
+        }
+      }
+    }
 
     hops.push({ startMs, durMs: dur * 1000, x0: x, y0: y, vx: along, vy: up })
 
     startMs += dur * 1000
     x += along * dur
-    up = impact * BOUNCE
-    along *= BOUNCE_DRAG
-    y = 0
+    const fallSpeed = up - GRAVITY * dur
+    y = hitWall ? y + up * dur - 0.5 * GRAVITY * dur * dur : 0
 
-    if (up < MIN_BOUNCE_VY) break
+    if (over) break // 넘어간 공은 그대로 화면 밖으로 사라진다
+
+    if (hitWall) {
+      // 벽에 맞고 되튄다. 위아래 속도는 유지한 채 앞뒤만 뒤집힌다.
+      along = -along * WALL_BOUNCE
+      up = fallSpeed * WALL_BOUNCE
+    } else {
+      up = Math.abs(fallSpeed) * BOUNCE
+      along *= BOUNCE_DRAG
+      if (up < MIN_BOUNCE_VY) break
+    }
   }
 
-  return hops
+  return { hops, over }
 }
 
-/** 그만 튀면 남은 속도로 땅을 굴러간다. 마찰로 일정하게 감속해 스스로 멈춘다. */
-function buildRoll(hops) {
+/**
+ * 그만 튀면 남은 속도로 땅을 굴러간다. 마찰로 일정하게 감속해 스스로 멈춘다.
+ * 담장을 넘어간 공은 화면 밖이라 구를 것도 없다.
+ */
+function buildRoll(hops, over) {
   const last = hops[hops.length - 1]
   const vx = last.vx
   const speed = Math.abs(vx)
 
   return {
     startMs: last.startMs + last.durMs,
-    durMs: (speed / ROLL_DECEL) * 1000,
+    durMs: over ? 0 : (speed / ROLL_DECEL) * 1000,
     x0: last.x0 + vx * (last.durMs / 1000),
     vx,
     decel: Math.sign(vx) * ROLL_DECEL, // 굴러가는 반대 방향으로 작용한다
@@ -151,7 +191,7 @@ function hopAt(hops, ageMs) {
   return hops[0]
 }
 
-/** 타구가 처음 땅에 닿을 때까지 간 거리 — 궤적 비교용. */
+/** 첫 구간이 끝나는 거리 — 땅에 닿거나 담장에 맞은 지점. 궤적 비교용. */
 export function carry(flight) {
   if (!flight) return 0
   const first = flight.hops[0]
@@ -166,7 +206,7 @@ export function restMs(flight) {
 
 /** 담장을 넘겼는가 — 홈런 판정. */
 export function clearsFence(flight) {
-  return carry(flight) >= FENCE_CARRY
+  return flight?.over === true
 }
 
 /** 튀고 구른 것까지 더해 공이 최종적으로 멈추는 거리. 화면 폭을 맞출 때 쓴다. */
