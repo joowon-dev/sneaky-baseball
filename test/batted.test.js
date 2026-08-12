@@ -204,7 +204,7 @@ describe('담장', () => {
   })
 
   it('담장에 닿을 때 담장보다 낮으면 튕겨 나온다', () => {
-    const off = battedFlight(HIT, 42)
+    const off = battedFlight(HIT, 18)
     expect(off.over).toBe(false)
 
     // 담장 자리에 닿는 구간이 있고, 그 다음 구간은 뒤로 간다.
@@ -214,7 +214,7 @@ describe('담장', () => {
   })
 
   it('튕겨 나온 지점의 높이는 담장보다 낮다', () => {
-    const off = battedFlight(HIT, 42)
+    const off = battedFlight(HIT, 18)
     const at = off.hops.findIndex((h, i) => i > 0 && h.x0 >= FENCE_DIST - 1e-9)
     expect(off.hops[at].y0).toBeLessThanOrEqual(FENCE_H)
   })

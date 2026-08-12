@@ -5,7 +5,7 @@ const path = require('node:path')
 const { app } = require('electron')
 
 // 창은 화면 작업 영역을 그대로 덮으므로 위치·크기는 저장하지 않는다.
-const DEFAULTS = { record: { bestStreak: 0 } }
+const DEFAULTS = { record: { bestMeters: 0 } }
 
 function file() {
   return path.join(app.getPath('userData'), 'state.json')

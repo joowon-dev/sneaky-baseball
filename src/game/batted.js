@@ -6,6 +6,9 @@ import { FOUL, WHIFF, WINDOWS } from './judge.js'
 
 export const GRAVITY = 9 // 필드 높이 / 초²
 
+/** 필드 높이 1 = 몇 미터인가. 비거리를 사람이 아는 단위로 보여주려고 둔다. */
+export const METERS_PER_UNIT = 45
+
 /**
  * 궤적 시간 → 실제 시간 배율. 1보다 작으면 실제로는 더 느리게 흐른다.
  * 날아가는 공을 눈으로 따라갈 수 있게 늦춰 뒀다. 그리는 쪽과 투구 간격이 같은 값을 쓴다.
@@ -35,8 +38,8 @@ const FADE_MS = 350 // 멈춘 공이 사라지기까지
  * 담장. 뚫리지 않는 벽이다 — 넘어가면 홈런, 맞으면 튕겨 나온다.
  * 판정 기준이자 화면에 그리는 그 선이라, 보이는 대로 판정된다.
  */
-export const FENCE_DIST = 1.85 // 타격점에서 담장까지
-export const FENCE_H = 0.16 // 담장 높이. 여기를 넘겨야 홈런
+export const FENCE_DIST = 2.3 // 타격점에서 담장까지
+export const FENCE_H = 0.09 // 담장 높이. 여기를 넘겨야 홈런
 
 /**
  * 타격점이 땅에서 떠 있는 높이. 공은 이만큼 더 떨어져야 땅에 닿고, 거기서 튄다.
@@ -68,7 +71,7 @@ export function battedFlight(result, errorMs, lane = 0, launchDy = LAUNCH_DY) {
   const vy = speed * Math.sin(rad)
   const vx = speed * Math.cos(rad) * (result === FOUL ? FOUL_SPEED_RATIO : 1)
 
-  const { hops, over } = buildPath(vx, vy, launchDy)
+  const { hops, over, overAtMs } = buildPath(vx, vy, launchDy)
   const roll = buildRoll(hops, over)
 
   return {
@@ -76,6 +79,7 @@ export function battedFlight(result, errorMs, lane = 0, launchDy = LAUNCH_DY) {
     vy,
     launchDy,
     over,
+    overAtMs,
     hops,
     roll,
     lifeMs: Math.round(roll.startMs + roll.durMs) + FADE_MS,
@@ -98,6 +102,7 @@ function buildPath(vx, vy, launchDy) {
   let up = vy
   let along = vx
   let over = false
+  let overAtMs = 0
 
   for (let i = 0; i < MAX_HOPS; i += 1) {
     // 땅에 닿기까지 걸리는 시간.
@@ -112,8 +117,10 @@ function buildPath(vx, vy, launchDy) {
       const toWall = (FENCE_DIST - x) / along
       if (toWall < toGround) {
         const height = y + up * toWall - 0.5 * GRAVITY * toWall * toWall
-        if (height > FENCE_H) over = true // 넘어갔다 — 홈런
-        else {
+        if (height > FENCE_H) {
+          over = true // 넘어갔다 — 홈런
+          overAtMs = startMs + toWall * 1000
+        } else {
           dur = toWall
           hitWall = true
         }
@@ -140,7 +147,7 @@ function buildPath(vx, vy, launchDy) {
     }
   }
 
-  return { hops, over }
+  return { hops, over, overAtMs }
 }
 
 /**
@@ -189,6 +196,22 @@ function hopAt(hops, ageMs) {
     if (ageMs >= hops[i].startMs) return hops[i]
   }
   return hops[0]
+}
+
+/**
+ * 비거리 — 담장이 없었다면 공이 떨어졌을 지점까지의 거리.
+ * 벽에 맞아 끊긴 궤적도 "얼마나 멀리 칠 뻔했는지"를 그대로 말해 준다.
+ */
+export function distance(flight) {
+  if (!flight) return 0
+  const { vx, vy, launchDy } = flight
+  const hang = (vy + Math.sqrt(Math.max(0, vy * vy + 2 * GRAVITY * launchDy))) / GRAVITY
+  return vx * hang
+}
+
+/** 비거리를 미터로. 화면에 띄우고 최고 기록으로 남긴다. */
+export function meters(flight) {
+  return Math.round(Math.abs(distance(flight)) * METERS_PER_UNIT)
 }
 
 /** 첫 구간이 끝나는 거리 — 땅에 닿거나 담장에 맞은 지점. 궤적 비교용. */

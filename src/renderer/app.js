@@ -9,7 +9,7 @@ const ctx = canvas.getContext('2d')
 
 let state = createGame()
 let size = { w: 0, h: 0 }
-let savedBest = 0
+let savedBest = 0 // 저장해 둔 최고 비거리(m)
 // ⌥을 누르고 있는 동안만 투수가 던진다. 브라우저로 열었을 땐 늘 켜져 있다.
 let holding = !window.sneaky
 
@@ -66,10 +66,10 @@ async function loadRecord() {
 }
 
 function persistRecord() {
-  if (state.bestStreak <= savedBest) return
-  savedBest = state.bestStreak
+  if (state.bestMeters <= savedBest) return
+  savedBest = state.bestMeters
 
-  const record = { bestStreak: savedBest }
+  const record = { bestMeters: savedBest }
   if (window.sneaky) {
     window.sneaky.saveRecord(record)
     return
@@ -98,8 +98,8 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('resize', resize)
 
 async function boot() {
-  savedBest = (await loadRecord()).bestStreak ?? 0
-  state = createGame({ bestStreak: savedBest })
+  savedBest = (await loadRecord()).bestMeters ?? 0
+  state = createGame({ bestMeters: savedBest })
   resize()
   requestAnimationFrame(frame)
 }

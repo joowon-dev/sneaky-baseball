@@ -7,10 +7,10 @@
 
 import { ballPosition } from '../game/pitches.js'
 import {
-  battedFlight, battedBall, FENCE_DIST, FENCE_H, LAUNCH_DY, TIME_SCALE,
+  battedFlight, battedBall, travel, FENCE_DIST, FENCE_H, LAUNCH_DY, TIME_SCALE,
 } from '../game/batted.js'
-import { READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, progress } from '../game/engine.js'
-import { HOMERUN, WHIFF, LABELS, WINDOWS } from '../game/judge.js'
+import { READY, PITCHING, RESULT, RESULT_MS, OUTCOME_MS, progress } from '../game/engine.js'
+import { HOMERUN, FOUL, WHIFF, LABELS, WINDOWS } from '../game/judge.js'
 import {
   drawFigure, batterStance, batterSwing, pitcherWindup, pitcherRelease,
 } from './sprites.js'
@@ -42,6 +42,10 @@ const FENCE_EDGE = 0.97
 
 // 공 뒤에 남는 잔상의 길이 (궤적 시간 기준). 점이 아니라 한 줄로 잇는다.
 const TRAIL_MS = 130
+
+// 결과 글씨가 사라지는 데 걸리는 시간. 떠 있는 총 시간은 engine의 OUTCOME_MS —
+// 그 글씨가 사라져야 다음 공이 오므로 투구 간격과 같은 값을 봐야 한다.
+const OUTCOME_FADE = 350
 
 const BASE_H = 320 // 이 높이를 기준으로 글자·여백을 비례시킨다
 
@@ -106,12 +110,17 @@ export function draw(ctx, width, height, state, now) {
     drawPitchedBall(ctx, field, spot, ui, state, now)
   }
 
-  drawVerdict(ctx, field, ui, state, now)
+  drawTiming(ctx, field, ui, state, now)
   if (state.phase === READY && !state.pitch) drawHint(ctx, field, ui, now)
   ctx.restore()
 
   // 맞은 공만 상자 밖 — 화면 전체를 쓴다. 페이즈와 무관하게 제 수명만큼 굴러간다.
-  if (state.lastResult) drawFlight(ctx, field, spot, ui, space, state, now)
+  if (state.lastResult) {
+    const { result, errorMs, lane } = state.lastResult
+    const flight = battedFlight(result, errorMs, lane ?? 0)
+    drawFlight(ctx, field, spot, ui, space, state, now, flight)
+    drawOutcome(ctx, space, ui, state, now, flight)
+  }
 }
 
 /**
@@ -127,6 +136,7 @@ function flightSpace(field, spot, screenW, screenH) {
     origin,
     unitY,
     fenceX,
+    screenW,
     unitX: (fenceX - origin.x) / FENCE_DIST,
     ground: field.y + spot.ground,
   }
@@ -142,7 +152,7 @@ function geometry(field) {
     ground,
     batterH,
     pitcherH,
-    contact: { x: field.w * (BATTER_X + 0.06), y: ground - batterH * 0.52 },
+    contact: { x: field.w * (BATTER_X + 0.025), y: ground - batterH * 0.52 },
     release: { x: field.w * (PITCHER_X - 0.06), y: ground - pitcherH * 0.88 },
   }
 }
@@ -157,7 +167,7 @@ function drawScore(ctx, field, ui, state) {
   ctx.shadowBlur = ui.glow
   ctx.fillStyle = SOFT
 
-  const score = `홈런 ${state.homeRuns}   연속 ${state.streak}   최고 ${state.bestStreak}`
+  const score = `홈런 ${state.homeRuns}   연속 ${state.streak}   최고 ${state.bestMeters}m`
   for (let i = 0; i < 3; i += 1) ctx.fillText(score, 0, 0)
   ctx.restore()
 }
@@ -314,15 +324,19 @@ function drawHint(ctx, field, ui, now) {
   ctx.restore()
 }
 
-function drawVerdict(ctx, field, ui, state, now) {
+/**
+ * 친 순간에는 타이밍만 알려준다. 안타인지 홈런인지는 공이 결판을 낸다 —
+ * 담장을 넘는 순간 담장 위에, 멈추는 순간 그 자리에 뜬다.
+ */
+function drawTiming(ctx, field, ui, state, now) {
   if (state.phase !== RESULT) return
 
   const age = now - state.resultAt
-  const life = RESULT_MS + WINDUP_MS * 0.5
+  const life = RESULT_MS
   if (age > life) return
 
   const { result, timing, errorMs } = state.lastResult
-  const big = result === HOMERUN
+  const missed = result === WHIFF
 
   ctx.save()
   ctx.globalAlpha = Math.max(0, 1 - age / life)
@@ -331,24 +345,73 @@ function drawVerdict(ctx, field, ui, state, now) {
   ctx.shadowColor = HALO
   ctx.shadowBlur = ui.glow
 
-  // 상자가 작으니 기록 줄 아래로 내려 겹치지 않게 둔다. 폭을 넘어가도 배경이 없어 괜찮다.
   const x = field.w * 0.3
   const y = field.h * 0.34 - Math.min(10 * ui.k, age * 0.02)
 
-  ctx.fillStyle = INK
-  ctx.font = `700 ${big ? ui.big : ui.label}px ui-rounded, "Helvetica Neue", sans-serif`
-  for (let i = 0; i < 3; i += 1) ctx.fillText(LABELS[result], x, y)
-  const labelWidth = ctx.measureText(LABELS[result]).width
+  if (missed) {
+    ctx.fillStyle = INK
+    ctx.font = `700 ${ui.label}px ui-rounded, "Helvetica Neue", sans-serif`
+    for (let i = 0; i < 3; i += 1) ctx.fillText(LABELS[WHIFF], x, y)
+  }
 
-  ctx.fillStyle = SOFT
+  const shift = missed ? ctx.measureText(LABELS[WHIFF]).width + 8 * ui.k : 0
+  ctx.fillStyle = missed ? SOFT : INK
   ctx.font = `500 ${ui.small}px ui-monospace, Menlo, monospace`
-  const sub = subtitle(result, timing, errorMs)
-  for (let i = 0; i < 3; i += 1) ctx.fillText(sub, x + labelWidth + 8 * ui.k, y + 1)
+  const sub = subtitle(timing, errorMs)
+  for (let i = 0; i < 3; i += 1) ctx.fillText(sub, x + shift, y + (missed ? 1 : 0))
 
   ctx.restore()
 }
 
-function subtitle(result, timing, errorMs) {
+/**
+ * 타구의 결말. 홈런이면 담장을 넘는 순간 담장 위에, 안타·파울이면 공이 멈춘 자리에.
+ * 둘 다 공이 거기 도착해야 뜬다 — 치자마자 답을 알려주지 않는다.
+ */
+function drawOutcome(ctx, space, ui, state, now, flight) {
+  const { result, meters } = state.lastResult
+  if (result === WHIFF || !flight) return
+
+  const homer = result === HOMERUN
+  // 홈런은 담장을 넘는 순간, 나머지는 다 굴러 멈추는 순간.
+  const atMs = homer ? flight.overAtMs : flight.roll.startMs + flight.roll.durMs
+  const age = (now - state.resultAt) * TIME_SCALE - atMs
+  if (age < 0) return
+
+  const shownFor = age / TIME_SCALE
+  if (shownFor > OUTCOME_MS) return
+
+  const spot = homer
+    ? { x: space.fenceX, y: space.ground - FENCE_H * space.unitY - ui.label * 1.4 }
+    : { x: space.origin.x + travel(flight) * space.unitX, y: space.ground - ui.label * 1.2 }
+
+  // 파울처럼 뒤로 간 공은 화면 밖에 설 수 있다. 글씨만은 화면 안에 붙잡아 둔다.
+  const edge = ui.label * 3
+  spot.x = clamp(spot.x, edge, space.screenW - edge)
+
+  ctx.save()
+  ctx.globalAlpha = clamp((OUTCOME_MS - shownFor) / OUTCOME_FADE, 0, 1)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+  ctx.shadowColor = HALO
+  ctx.shadowBlur = ui.glow
+
+  // 뜨는 동안 살짝 떠오른다.
+  const rise = Math.min(8 * ui.k, shownFor * 0.03)
+
+  ctx.fillStyle = INK
+  ctx.font = `700 ${homer ? ui.big : ui.label}px ui-rounded, "Helvetica Neue", sans-serif`
+  for (let i = 0; i < 3; i += 1) ctx.fillText(LABELS[result], spot.x, spot.y - rise)
+
+  if (result !== FOUL) {
+    ctx.fillStyle = SOFT
+    ctx.font = `500 ${ui.small}px ui-monospace, Menlo, monospace`
+    for (let i = 0; i < 3; i += 1) ctx.fillText(`${meters}m`, spot.x, spot.y - rise + ui.small * 1.5)
+  }
+
+  ctx.restore()
+}
+
+function subtitle(timing, errorMs) {
   if (timing === 'take') return '가만히 있었다'
   if (timing === 'perfect') return 'PERFECT'
   return `${Math.abs(Math.round(errorMs))}ms ${timing === 'early' ? '빠름' : '늦음'}`

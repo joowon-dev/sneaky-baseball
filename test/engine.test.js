@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   createGame, startPitch, swing, tick, settle, progress,
-  idle, nextPitchAt, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS,
+  idle, nextPitchAt, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, OUTCOME_MS,
 } from '../src/game/engine.js'
 import { HOMERUN, HIT, FOUL, WHIFF, WINDOWS } from '../src/game/judge.js'
-import { battedFlight, clearsFence } from '../src/game/batted.js'
+import { battedFlight, clearsFence, meters } from '../src/game/batted.js'
 
 const PITCH = { type: 'fastball', label: '직구', flightMs: 900, breakX: 0, breakY: 0 }
 const T0 = 1_000
@@ -68,7 +68,7 @@ describe('스코어', () => {
   it('홈런은 홈런·안타·연속을 모두 올린다', () => {
     const s = swingWith(0)
     expect(s.lastResult.result).toBe(HOMERUN)
-    expect(s).toMatchObject({ homeRuns: 1, hits: 1, streak: 1, bestStreak: 1 })
+    expect(s).toMatchObject({ homeRuns: 1, hits: 1, streak: 1 })
   })
 
   it('안타는 홈런 수를 올리지 않는다', () => {
@@ -80,18 +80,37 @@ describe('스코어', () => {
   it('파울은 어떤 기록도 바꾸지 않는다', () => {
     const s = swingWith(120, { homeRuns: 3, hits: 5, streak: 2, bestStreak: 4 })
     expect(s.lastResult.result).toBe(FOUL)
-    expect(s).toMatchObject({ homeRuns: 3, hits: 5, streak: 2, bestStreak: 4 })
+    expect(s).toMatchObject({ homeRuns: 3, hits: 5, streak: 2 })
   })
 
-  it('헛스윙은 연속을 끊지만 최고 기록은 남긴다', () => {
-    const s = swingWith(400, { streak: 6, bestStreak: 6 })
+  it('헛스윙은 연속을 끊는다', () => {
+    const s = swingWith(400, { streak: 6 })
     expect(s.lastResult.result).toBe(WHIFF)
-    expect(s).toMatchObject({ streak: 0, bestStreak: 6 })
+    expect(s.streak).toBe(0)
+  })
+})
+
+describe('최고 비거리', () => {
+  it('친 거리를 미터로 남긴다', () => {
+    const s = swingWith(0)
+    expect(s.lastResult.meters).toBe(meters(battedFlight(HIT, 0, 0)))
+    expect(s.lastResult.meters).toBeGreaterThan(100)
   })
 
-  it('최고 연속은 현재 연속이 넘어설 때만 갱신된다', () => {
-    expect(swingWith(0, { streak: 2, bestStreak: 9 }).bestStreak).toBe(9)
-    expect(swingWith(0, { streak: 9, bestStreak: 9 }).bestStreak).toBe(10)
+  it('더 멀리 쳤을 때만 갱신된다', () => {
+    expect(swingWith(60, { bestMeters: 999 }).bestMeters).toBe(999)
+    expect(swingWith(0, { bestMeters: 10 }).bestMeters).toBeGreaterThan(10)
+  })
+
+  it('약하게 친 공도 비거리는 남는다 — 최고만 못 넘길 뿐', () => {
+    const weak = swingWith(120)
+    expect(weak.lastResult.meters).toBeGreaterThan(0)
+  })
+
+  it('헛스윙은 비거리가 0이라 기록을 건드리지 않는다', () => {
+    const s = swingWith(400, { bestMeters: 77 })
+    expect(s.lastResult.meters).toBe(0)
+    expect(s.bestMeters).toBe(77)
   })
 })
 
@@ -137,15 +156,25 @@ describe('settle', () => {
     expect(nextPitchAt(s)).toBe(s.resultAt + RESULT_MS + WINDUP_MS)
   })
 
-  it('친 공이 다 굴러 멈춘 뒤에 와인드업을 시작한다', () => {
+  it('결과 글씨가 사라진 뒤에 와인드업을 시작한다', () => {
     const homerun = swingWith(0)
     const whiff = swingWith(400)
 
-    expect(homerun.restAt).toBeGreaterThan(homerun.resultAt + RESULT_MS)
-    expect(nextPitchAt(homerun)).toBe(homerun.restAt + WINDUP_MS)
-    // 잘 맞을수록 공이 멀리 굴러가니 다음 공도 늦게 온다.
+    expect(homerun.outcomeEndsAt).toBeGreaterThan(homerun.resultAt + RESULT_MS)
+    expect(nextPitchAt(homerun)).toBe(homerun.outcomeEndsAt + WINDUP_MS)
+    // 잘 맞을수록 결말이 늦게 나니 다음 공도 늦게 온다.
     expect(nextPitchAt(homerun) - homerun.resultAt)
       .toBeGreaterThan(nextPitchAt(whiff) - whiff.resultAt)
+  })
+
+  it('홈런 글씨는 담장을 넘는 순간부터 센다 — 공이 다 날아갈 때까지 기다리지 않는다', () => {
+    const homerun = swingWith(0)
+    expect(homerun.outcomeEndsAt).toBeLessThan(homerun.restAt + OUTCOME_MS)
+  })
+
+  it('공이 아직 구르는 중이면 글씨가 사라져도 기다린다', () => {
+    const hit = swingWith(60)
+    expect(nextPitchAt(hit)).toBeGreaterThanOrEqual(hit.restAt + WINDUP_MS)
   })
 
   it('약하게 맞은 공은 금방 멈춰 다음 공이 빨리 온다', () => {

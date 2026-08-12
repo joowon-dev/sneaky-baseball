@@ -74,10 +74,10 @@ function createTray() {
 
 function refreshTray() {
   if (!tray) return
-  const { bestStreak } = store.read().record
+  const { bestMeters } = store.read().record
 
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `최고 연속  ${bestStreak}`, enabled: false },
+    { label: `최고 비거리  ${bestMeters}m`, enabled: false },
     { label: '⌥ 을 누르고 있는 동안 투구', enabled: false },
     { label: `스윙  ${SWING_LABEL}`, enabled: false },
     { type: 'separator' },
@@ -176,9 +176,9 @@ app.on('activate', () => {
 ipcMain.handle('record:get', () => store.read().record)
 
 ipcMain.on('record:save', (_event, record) => {
-  const bestStreak = Number(record?.bestStreak)
-  if (!Number.isFinite(bestStreak)) return
-  store.write({ record: { bestStreak } })
+  const bestMeters = Number(record?.bestMeters)
+  if (!Number.isFinite(bestMeters)) return
+  store.write({ record: { bestMeters } })
   refreshTray()
 })
 

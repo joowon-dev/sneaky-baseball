@@ -1,7 +1,7 @@
 // 게임 상태 전이. 모든 함수는 새 상태를 반환하는 순수 함수다.
 
 import { HOMERUN, HIT, FOUL, WHIFF, WINDOWS, judgeSwing, judgeTake } from './judge.js'
-import { battedFlight, restMs, clearsFence } from './batted.js'
+import { battedFlight, restMs, clearsFence, meters, TIME_SCALE } from './batted.js'
 
 export const READY = 'ready'
 export const PITCHING = 'pitching'
@@ -14,15 +14,22 @@ export const RESULT = 'result'
 export const RESULT_MS = 700
 export const WINDUP_MS = 500
 
+/**
+ * 타구의 결말(홈런·안타·파울)이 공 자리에 떠 있는 시간.
+ * 이 글씨가 사라져야 다음 공이 온다 — 그리는 쪽도 같은 값을 쓴다.
+ */
+export const OUTCOME_MS = 1000
+
 export function createGame(initial = {}) {
   return {
     phase: READY,
     homeRuns: 0,
     hits: 0,
     streak: 0,
-    bestStreak: 0,
+    bestMeters: 0,
     pitches: 0,
     restAt: 0,
+    outcomeEndsAt: 0,
     pitch: null,
     pitchStartedAt: 0,
     plateAt: 0,
@@ -58,11 +65,11 @@ export function tick(state, now) {
 }
 
 /**
- * 다음 공을 던질 수 있는 시각. 결과를 다 보여주고, 친 공이 멈추기를 기다린 뒤 와인드업한다.
- * 그래서 잘 맞은 타구일수록 다음 공이 늦게 온다 — 끝까지 굴러가는 걸 보고 던진다.
+ * 다음 공을 던질 수 있는 시각. 공이 멈추고 결과 글씨까지 사라진 뒤에 와인드업한다.
+ * 그래서 잘 맞은 타구일수록 다음 공이 늦게 온다 — 끝까지 보고 던진다.
  */
 export function nextPitchAt(state) {
-  return Math.max(state.resultAt + RESULT_MS, state.restAt) + WINDUP_MS
+  return Math.max(state.outcomeEndsAt, state.restAt) + WINDUP_MS
 }
 
 /** 다음 공을 던질 때가 됐으면 받을 수 있는 상태로 돌아간다. */
@@ -87,6 +94,17 @@ export function progress(state, now) {
   return (now - state.pitchStartedAt) / state.pitch.flightMs
 }
 
+/**
+ * 결과 글씨가 사라지기까지 걸리는 시간.
+ * 홈런은 담장을 넘는 순간, 나머지는 다 굴러 멈추는 순간에 떠서 OUTCOME_MS 동안 머문다.
+ * 친 공이 없으면(헛스윙) 타이밍 표시가 사라지는 것으로 끝이다.
+ */
+function outcomeLife(flight) {
+  if (!flight) return RESULT_MS
+  const atMs = flight.over ? flight.overAtMs : flight.roll.startMs + flight.roll.durMs
+  return atMs / TIME_SCALE + OUTCOME_MS
+}
+
 function applyResult(state, verdict, now) {
   const lane = state.pitch?.lane ?? 0
   // 타격 높이(launchDy)는 그리는 쪽 사정이고 멈추는 시각에 미치는 영향은 몇 ms라 여기선 뺀다.
@@ -95,13 +113,16 @@ function applyResult(state, verdict, now) {
   // 홈런은 타이밍이 아니라 담장을 넘었는지로 갈린다. 화면에 그려진 그 선 그대로다.
   const result = verdict.result === HIT && clearsFence(flight) ? HOMERUN : verdict.result
 
+  const flownM = meters(flight)
+
   const next = {
     ...state,
     phase: RESULT,
     // 공의 높낮이를 함께 남긴다 — 다음 공이 와도 이 타구의 궤적은 그대로여야 한다.
-    lastResult: { ...verdict, result, lane },
+    lastResult: { ...verdict, result, lane, meters: flownM },
     resultAt: now,
     restAt: now + restMs(flight),
+    outcomeEndsAt: now + outcomeLife(flight),
   }
 
   switch (result) {
@@ -121,6 +142,7 @@ function applyResult(state, verdict, now) {
       break
   }
 
-  next.bestStreak = Math.max(state.bestStreak, next.streak)
+  // 최고 기록은 연속이 아니라 가장 멀리 친 거리다.
+  next.bestMeters = Math.max(state.bestMeters, flownM)
   return next
 }
