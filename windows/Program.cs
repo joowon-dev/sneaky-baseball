@@ -198,6 +198,7 @@ sealed class Overlay : Form
     /// <summary>렌더러가 기대하는 window.sneaky. mac 셸과 같은 모양이다.</summary>
     private string BridgeScript() => $$"""
         window.sneaky = {
+          keyHint: 'Alt 누르고 Space',
           getRecord: () => Promise.resolve({ bestMeters: {{BestMeters}} }),
           saveRecord: (record) => window.chrome.webview.postMessage({
             type: 'record', bestMeters: record && record.bestMeters,

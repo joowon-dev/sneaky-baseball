@@ -83,7 +83,8 @@ function persistRecord() {
 
 // 오버레이는 포커스가 없어 키 이벤트가 오지 않는다 — 전역 단축키가 main을 거쳐 들어온다.
 if (window.sneaky) {
-  setKeyHint('⌥ 누르고 SPACE')
+  // 키 이름은 셸이 알려준다 — 맥은 ⌥, 윈도우는 Alt.
+  setKeyHint(window.sneaky.keyHint ?? '⌥ 누르고 SPACE')
   window.sneaky.onSwing(press)
   window.sneaky.onHold(setHolding)
 }

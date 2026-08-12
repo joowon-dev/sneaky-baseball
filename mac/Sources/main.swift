@@ -149,6 +149,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private func bridgeScript() -> String {
         """
         window.sneaky = {
+          keyHint: '⌥ 누르고 SPACE',
           getRecord: () => Promise.resolve({ bestMeters: \(bestMeters) }),
           saveRecord: (record) => window.webkit.messageHandlers.sneaky.postMessage({
             type: 'record', bestMeters: record && record.bestMeters,
