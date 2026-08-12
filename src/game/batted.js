@@ -6,6 +6,12 @@ import { FOUL, WHIFF, WINDOWS } from './judge.js'
 
 export const GRAVITY = 9 // 필드 높이 / 초²
 
+/**
+ * 궤적 시간 → 실제 시간 배율. 1보다 작으면 실제로는 더 느리게 흐른다.
+ * 날아가는 공을 눈으로 따라갈 수 있게 늦춰 뒀다. 그리는 쪽과 투구 간격이 같은 값을 쓴다.
+ */
+export const TIME_SCALE = 0.65
+
 const LAUNCH_DEG = 32 // 퍼펙트 타이밍의 발사각
 const MIN_DEG = 8
 const MAX_DEG = 62
@@ -140,6 +146,12 @@ export function carry(flight) {
   if (!flight) return 0
   const first = flight.hops[0]
   return first.vx * (first.durMs / 1000)
+}
+
+/** 공이 다 굴러 멈추기까지 걸리는 실제 시간. 다음 투구를 언제 던질지 정할 때 쓴다. */
+export function restMs(flight) {
+  if (!flight) return 0
+  return (flight.roll.startMs + flight.roll.durMs) / TIME_SCALE
 }
 
 /** 튀고 구른 것까지 더해 공이 최종적으로 멈추는 거리. 화면 폭을 맞출 때 쓴다. */

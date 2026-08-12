@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createGame, startPitch, swing, tick, settle, progress,
-  READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, IDLE_AFTER_TAKES,
+  nextPitchAt, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, IDLE_AFTER_TAKES,
 } from '../src/game/engine.js'
 import { HOMERUN, HIT, FOUL, WHIFF, WINDOWS } from '../src/game/judge.js'
 
@@ -27,7 +27,7 @@ describe('startPitch', () => {
 
   it('직전 결과를 지우지 않는다 — 친 공은 다음 공이 와도 계속 굴러간다', () => {
     const after = swingWith(0)
-    const ready = settle(after, after.resultAt + RESULT_MS + WINDUP_MS)
+    const ready = settle(after, nextPitchAt(after))
     const next = startPitch(ready, PITCH, 9_999)
     expect(next.lastResult).toEqual(after.lastResult)
     expect(next.resultAt).toBe(after.resultAt)
@@ -100,10 +100,33 @@ describe('tick', () => {
 })
 
 describe('settle', () => {
-  it('결과 표시와 와인드업이 끝나야 다음 투구를 받는다', () => {
+  it('다음 투구 시각이 되어야 받는다', () => {
     const s = swingWith(0)
-    expect(settle(s, s.resultAt + RESULT_MS + WINDUP_MS - 1).phase).toBe(RESULT)
-    expect(settle(s, s.resultAt + RESULT_MS + WINDUP_MS).phase).toBe(READY)
+    expect(settle(s, nextPitchAt(s) - 1).phase).toBe(RESULT)
+    expect(settle(s, nextPitchAt(s)).phase).toBe(READY)
+  })
+
+  it('헛스윙은 굴러갈 공이 없으니 결과만 보여주고 바로 다음 공', () => {
+    const s = swingWith(400)
+    expect(s.restAt).toBe(s.resultAt)
+    expect(nextPitchAt(s)).toBe(s.resultAt + RESULT_MS + WINDUP_MS)
+  })
+
+  it('친 공이 다 굴러 멈춘 뒤에 와인드업을 시작한다', () => {
+    const homerun = swingWith(0)
+    const whiff = swingWith(400)
+
+    expect(homerun.restAt).toBeGreaterThan(homerun.resultAt + RESULT_MS)
+    expect(nextPitchAt(homerun)).toBe(homerun.restAt + WINDUP_MS)
+    // 잘 맞을수록 공이 멀리 굴러가니 다음 공도 늦게 온다.
+    expect(nextPitchAt(homerun) - homerun.resultAt)
+      .toBeGreaterThan(nextPitchAt(whiff) - whiff.resultAt)
+  })
+
+  it('약하게 맞은 공은 금방 멈춰 다음 공이 빨리 온다', () => {
+    const solid = swingWith(0)
+    const weak = swingWith(140)
+    expect(weak.restAt - weak.resultAt).toBeLessThan(solid.restAt - solid.resultAt)
   })
 })
 
@@ -111,7 +134,7 @@ describe('settle', () => {
 function takeOne(state) {
   const pitching = startPitch(state, PITCH, state.resultAt + 10_000)
   const done = tick(pitching, pitching.plateAt + WINDOWS.foul + 1)
-  return settle(done, done.resultAt + RESULT_MS + WINDUP_MS)
+  return settle(done, nextPitchAt(done))
 }
 
 describe('거르면 멈춘다', () => {
@@ -139,7 +162,7 @@ describe('거르면 멈춘다', () => {
     expect(swung.lastResult).toMatchObject({ result: WHIFF, timing: 'late' })
     expect(swung.takes).toBe(0)
 
-    const ready = settle(swung, swung.resultAt + RESULT_MS + WINDUP_MS)
+    const ready = settle(swung, nextPitchAt(swung))
     expect(ready.pitch).not.toBeNull()
   })
 })

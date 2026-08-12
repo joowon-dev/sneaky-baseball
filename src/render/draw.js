@@ -6,7 +6,7 @@
 //   2. 화면 좌표 — 맞은 공만. 상자를 벗어나 작업 중인 창 위로 솟구친다.
 
 import { ballPosition } from '../game/pitches.js'
-import { battedFlight, battedBall, travel } from '../game/batted.js'
+import { battedFlight, battedBall, travel, TIME_SCALE } from '../game/batted.js'
 import { READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, progress } from '../game/engine.js'
 import { HOMERUN, LABELS, WINDOWS } from '../game/judge.js'
 import {
@@ -24,10 +24,13 @@ const GROUND_Y = 0.92
 const BACKSTOP_X = 0.07 // 헛친 공이 굴러가 사라지는 자리
 const BATTER_X = 0.19
 const PITCHER_X = 0.87
-const FENCE_X = 0.975
 const BATTER_H = 0.62
 const PITCHER_H = 0.5
-const FENCE_H = 0.3
+
+// 담장. 필드 상자가 아니라 타구 좌표에 산다 — 넘기면 홈런인 그 선.
+// 퍼펙트 타이밍(캐리 2.8)은 넘고, 굿 타이밍 경계(캐리 1.9)는 못 넘는 자리.
+const FENCE_CARRY = 2.3
+const FENCE_H = 0.16 // 화면 높이 대비
 
 // 화면 왼쪽 아래 구석에 놓이는 필드 상자. 작을수록 눈에 덜 띈다 —
 // 타구는 이 상자와 무관하게 화면 크기로 날아가므로 상자만 줄이면 된다.
@@ -40,10 +43,6 @@ const MARGIN_Y = 8
 // 그래서 공은 화면 밖으로 나가지 않고 화면 안에서 튀다 선다.
 const FLIGHT_FAR_EDGE = 0.9
 const MAX_LANE = 0.06 // 가장 높은 공(가장 멀리 나가는 각도). pitches.js의 LANE_SPREAD 절반
-
-// 타구를 실제 시간보다 느리게 흘려 보낸다. 궤적은 그대로고 속도만 준다 —
-// 날아가는 공을 눈으로 따라갈 수 있게. 1보다 작을수록 느리다.
-const FLIGHT_TIME_SCALE = 0.65
 
 // 공 뒤에 남는 잔상의 길이 (궤적 시간 기준). 점이 아니라 한 줄로 잇는다.
 const TRAIL_MS = 130
@@ -87,6 +86,10 @@ export function draw(ctx, width, height, state, now) {
   const field = layout(width, height)
   const ui = metrics(field.h)
   const spot = geometry(field)
+  const space = flightSpace(field, spot, width, height)
+
+  // 지면과 담장은 타구가 지나가는 범위 전체에 걸친다 — 화면 좌표.
+  drawGround(ctx, field, spot, ui, space)
 
   ctx.save()
   ctx.translate(field.x, field.y)
@@ -94,7 +97,6 @@ export function draw(ctx, width, height, state, now) {
   ctx.strokeStyle = INK
 
   drawScore(ctx, field, ui, state)
-  drawGround(ctx, field, spot, ui)
   drawContactMark(ctx, spot, ui, state, now)
   drawPeople(ctx, field, spot, ui, state, now)
 
@@ -105,7 +107,29 @@ export function draw(ctx, width, height, state, now) {
   ctx.restore()
 
   // 맞은 공만 상자 밖 — 화면 전체를 쓴다. 페이즈와 무관하게 제 수명만큼 굴러간다.
-  if (state.lastResult) drawFlight(ctx, field, spot, ui, width, height, state, now)
+  if (state.lastResult) drawFlight(ctx, field, spot, ui, space, state, now)
+}
+
+/**
+ * 타구를 화면에 앉히는 좌표계. 세로 단위는 화면 높이,
+ * 가로 단위는 "가장 멀리 가는 타구가 화면 폭 FLIGHT_FAR_EDGE 지점에 멈추도록" 역산한다.
+ */
+function flightSpace(field, spot, screenW, screenH) {
+  const unitY = screenH
+  // 타격점이 땅에서 떠 있는 높이 — 공은 이만큼 더 떨어져야 땅에 닿고, 거기서 튄다.
+  const launchDy = (spot.ground - spot.contact.y) / unitY
+  const origin = { x: field.x + spot.contact.x, y: field.y + spot.contact.y }
+  const far = travel(battedFlight(HOMERUN, 0, -MAX_LANE, launchDy))
+  const farX = screenW * FLIGHT_FAR_EDGE
+
+  return {
+    origin,
+    unitY,
+    launchDy,
+    farX,
+    unitX: (farX - origin.x) / far,
+    ground: field.y + spot.ground,
+  }
 }
 
 /** 필드 비율을 픽셀 좌표로 한 번에 풀어둔다. */
@@ -138,25 +162,27 @@ function drawScore(ctx, field, ui, state) {
   ctx.restore()
 }
 
-function drawGround(ctx, field, spot, ui) {
+/** 지면과 담장. 공이 굴러가는 데까지 이어지므로 필드 상자가 아니라 화면 좌표에 그린다. */
+function drawGround(ctx, field, spot, ui, space) {
   ctx.save()
   ctx.shadowColor = HALO
   ctx.shadowBlur = ui.glow
   ctx.lineWidth = Math.max(1, ui.k)
   ctx.strokeStyle = DIM
 
+  // 지면 — 타자 발밑부터 공이 멈추는 데까지.
   ctx.beginPath()
-  ctx.moveTo(0, spot.ground)
-  ctx.lineTo(field.w, spot.ground)
+  ctx.moveTo(field.x, space.ground)
+  ctx.lineTo(space.farX, space.ground)
   ctx.stroke()
   ctx.stroke()
 
-  // 외야 담장 — 이걸 넘기면 홈런.
-  const fenceX = field.w * FENCE_X
+  // 담장 — 이 선을 넘겨야 홈런.
+  const fenceX = space.origin.x + FENCE_CARRY * space.unitX
   ctx.setLineDash([3 * ui.k, 4 * ui.k])
   ctx.beginPath()
-  ctx.moveTo(fenceX, spot.ground)
-  ctx.lineTo(fenceX, spot.ground - field.h * FENCE_H)
+  ctx.moveTo(fenceX, space.ground)
+  ctx.lineTo(fenceX, space.ground - FENCE_H * space.unitY)
   ctx.stroke()
   ctx.stroke()
   ctx.restore()
@@ -220,31 +246,21 @@ function drawPitchedBall(ctx, field, spot, ui, state, now) {
  * 결과 뒤의 공 — 맞았으면 화면 좌표의 포물선, 헛스윙이면 포수 미트로.
  * 화면 좌표로 그리므로 필드 상자를 벗어나 작업 중인 창 위를 가로지른다.
  */
-function drawFlight(ctx, field, spot, ui, screenW, screenH, state, now) {
+function drawFlight(ctx, field, spot, ui, space, state, now) {
   const age = now - state.resultAt
-  const origin = { x: field.x + spot.contact.x, y: field.y + spot.contact.y }
-
-  const unitY = screenH
-  // 타격점이 땅에서 떠 있는 높이 — 공은 이만큼 더 떨어져야 땅에 닿고, 거기서 튄다.
-  const launchDy = (spot.ground - spot.contact.y) / unitY
-
   const { result, errorMs, lane } = state.lastResult
-  const flight = battedFlight(result, errorMs, lane ?? 0, launchDy)
+  const flight = battedFlight(result, errorMs, lane ?? 0, space.launchDy)
 
   if (!flight) {
     drawPassedBall(ctx, field, spot, ui, age)
     return
   }
 
-  // 가장 멀리 가는 타구가 화면 오른쪽 FLIGHT_FAR_EDGE 지점에 멈추도록 가로 단위를 잡는다.
-  const far = travel(battedFlight(HOMERUN, 0, -MAX_LANE, launchDy))
-  const unitX = (screenW * FLIGHT_FAR_EDGE - origin.x) / far
-
   // 궤적 상의 시각. 실제로 흐른 시간보다 느리게 간다.
-  const flightAge = age * FLIGHT_TIME_SCALE
+  const flightAge = age * TIME_SCALE
   const at = (t) => {
     const p = battedBall(flight, t)
-    return p && { x: origin.x + p.dx * unitX, y: origin.y - p.dy * unitY }
+    return p && { x: space.origin.x + p.dx * space.unitX, y: space.origin.y - p.dy * space.unitY }
   }
 
   // 다 구르고 멈춘 공은 그 자리에서 서서히 사라진다.
