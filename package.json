@@ -7,10 +7,14 @@
   "scripts": {
     "start": "electron .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "chmod +x node_modules/node-global-key-listener/bin/MacKeyServer || true"
   },
   "devDependencies": {
     "electron": "^33.2.0",
     "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "node-global-key-listener": "^0.3.0"
   }
 }

@@ -14,12 +14,6 @@ export const RESULT = 'result'
 export const RESULT_MS = 700
 export const WINDUP_MS = 500
 
-/**
- * 이만큼 연속으로 스윙하지 않으면 자동 투구를 멈춘다.
- * 화면 위에 늘 떠 있는 오버레이라, 안 보고 있을 때까지 계속 던지면 방해가 된다.
- */
-export const IDLE_AFTER_TAKES = 3
-
 export function createGame(initial = {}) {
   return {
     phase: READY,
@@ -28,7 +22,6 @@ export function createGame(initial = {}) {
     streak: 0,
     bestStreak: 0,
     pitches: 0,
-    takes: 0,
     restAt: 0,
     pitch: null,
     pitchStartedAt: 0,
@@ -72,15 +65,20 @@ export function nextPitchAt(state) {
   return Math.max(state.resultAt + RESULT_MS, state.restAt) + WINDUP_MS
 }
 
-/**
- * 다음 공을 던질 때가 됐으면 받을 수 있는 상태로 돌아간다.
- * 계속 거르고 있었다면 pitch를 비워 idle로 — 다시 키를 누를 때까지 던지지 않는다.
- */
+/** 다음 공을 던질 때가 됐으면 받을 수 있는 상태로 돌아간다. */
 export function settle(state, now) {
   if (state.phase !== RESULT) return state
   if (now < nextPitchAt(state)) return state
-  if (state.takes >= IDLE_AFTER_TAKES) return { ...state, phase: READY, pitch: null, takes: 0 }
   return { ...state, phase: READY }
+}
+
+/**
+ * 손을 떼면 즉시 대기. 던지던 공은 없던 일이 된다 — 안 보고 있을 때 온 공에
+ * 헛스윙 기록이 남으면 억울하다. 이미 친 공(lastResult)은 건드리지 않아 계속 굴러간다.
+ */
+export function idle(state) {
+  if (state.phase === READY && !state.pitch) return state
+  return { ...state, phase: READY, pitch: null }
 }
 
 /** 투구 진행률 0..1 이상 (파울 윈도우 동안 1을 넘어간다). */
@@ -101,7 +99,6 @@ function applyResult(state, verdict, now) {
     lastResult: { ...verdict, lane },
     resultAt: now,
     restAt: now + restMs(flight),
-    takes: verdict.timing === 'take' ? state.takes + 1 : 0,
   }
 
   switch (verdict.result) {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createGame, startPitch, swing, tick, settle, progress,
-  nextPitchAt, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, IDLE_AFTER_TAKES,
+  idle, nextPitchAt, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS,
 } from '../src/game/engine.js'
 import { HOMERUN, HIT, FOUL, WHIFF, WINDOWS } from '../src/game/judge.js'
 
@@ -130,40 +130,27 @@ describe('settle', () => {
   })
 })
 
-/** 공 하나를 그냥 보내고(스윙 없음) 다음 투구를 받을 수 있는 상태까지 진행한다. */
-function takeOne(state) {
-  const pitching = startPitch(state, PITCH, state.resultAt + 10_000)
-  const done = tick(pitching, pitching.plateAt + WINDOWS.foul + 1)
-  return settle(done, nextPitchAt(done))
-}
-
-describe('거르면 멈춘다', () => {
-  it('스윙하지 않은 횟수를 센다', () => {
-    let s = createGame()
-    for (let i = 1; i < IDLE_AFTER_TAKES; i += 1) {
-      s = takeOne(s)
-      expect(s.takes).toBe(i)
-      expect(s.pitch).not.toBeNull() // 아직은 자동으로 계속 던진다
-    }
+describe('idle', () => {
+  it('던지던 공을 거두고 대기로 돌아간다', () => {
+    const pitching = startPitch(createGame(), PITCH, T0)
+    expect(idle(pitching)).toMatchObject({ phase: READY, pitch: null })
   })
 
-  it(`${IDLE_AFTER_TAKES}번 연속으로 거르면 공을 비우고 기다린다`, () => {
-    let s = createGame()
-    for (let i = 0; i < IDLE_AFTER_TAKES; i += 1) s = takeOne(s)
-    expect(s).toMatchObject({ phase: READY, pitch: null, takes: 0 })
+  it('거둔 공은 헛스윙으로 기록되지 않는다', () => {
+    const pitching = startPitch(createGame({ streak: 4 }), PITCH, T0)
+    expect(idle(pitching)).toMatchObject({ streak: 4, lastResult: null })
   })
 
-  it('중간에 한 번이라도 휘두르면 카운트가 풀린다', () => {
-    let s = createGame()
-    for (let i = 0; i < IDLE_AFTER_TAKES - 1; i += 1) s = takeOne(s)
+  it('이미 친 공은 건드리지 않는다 — 계속 굴러가야 한다', () => {
+    const after = swingWith(0)
+    const stopped = idle(after)
+    expect(stopped.lastResult).toBe(after.lastResult)
+    expect(stopped.resultAt).toBe(after.resultAt)
+  })
 
-    const pitching = startPitch(s, PITCH, s.resultAt + 10_000)
-    const swung = swing(pitching, pitching.plateAt + 400) // 헛스윙이어도 휘두른 건 휘두른 것
-    expect(swung.lastResult).toMatchObject({ result: WHIFF, timing: 'late' })
-    expect(swung.takes).toBe(0)
-
-    const ready = settle(swung, nextPitchAt(swung))
-    expect(ready.pitch).not.toBeNull()
+  it('이미 대기 중이면 그대로 둔다', () => {
+    const ready = createGame()
+    expect(idle(ready)).toBe(ready)
   })
 })
 

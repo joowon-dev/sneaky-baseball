@@ -1,5 +1,5 @@
 import { nextPitch } from '../game/pitches.js'
-import { createGame, startPitch, swing, tick, settle, READY } from '../game/engine.js'
+import { createGame, startPitch, swing, tick, settle, idle, nextPitchAt, READY } from '../game/engine.js'
 import { draw, setKeyHint } from '../render/draw.js'
 
 const RECORD_KEY = 'sneaky-baseball:record'
@@ -10,6 +10,8 @@ const ctx = canvas.getContext('2d')
 let state = createGame()
 let size = { w: 0, h: 0 }
 let savedBest = 0
+// ⌥을 누르고 있는 동안만 투수가 던진다. 브라우저로 열었을 땐 늘 켜져 있다.
+let holding = !window.sneaky
 
 function resize() {
   const dpr = window.devicePixelRatio || 1
@@ -30,6 +32,12 @@ function press() {
   else state = swing(state, now)
 }
 
+/** 손을 떼면 던지던 공을 거두고 대기로. */
+function setHolding(down) {
+  holding = down
+  if (!holding) state = idle(state)
+}
+
 function frame() {
   const now = performance.now()
 
@@ -39,8 +47,9 @@ function frame() {
     state = settled
     persistRecord()
   }
-  // 첫 공과, 계속 거른 뒤의 공은 사용자가 키를 누를 때까지 기다린다.
-  if (state.phase === READY && state.pitch) pitch(now)
+  // ⌥을 누르고 있고, 직전 타구가 다 굴러 멈췄으면 다음 공을 던진다.
+  const due = !state.lastResult || now >= nextPitchAt(state)
+  if (holding && state.phase === READY && due) pitch(now)
 
   draw(ctx, size.w, size.h, state, now)
   requestAnimationFrame(frame)
@@ -74,8 +83,9 @@ function persistRecord() {
 
 // 오버레이는 포커스가 없어 키 이벤트가 오지 않는다 — 전역 단축키가 main을 거쳐 들어온다.
 if (window.sneaky) {
-  setKeyHint('⌥Space')
+  setKeyHint('⌥ 누르고 SPACE')
   window.sneaky.onSwing(press)
+  window.sneaky.onHold(setHolding)
 }
 
 // 브라우저에서 index.html만 열었을 때의 경로.
