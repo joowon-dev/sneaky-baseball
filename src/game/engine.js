@@ -11,7 +11,7 @@ export const RESULT = 'result'
  * 둘을 더한 값이 타구가 화면을 가로지르는 데 걸리는 시간보다 길어야 궤적이 잘리지 않는다.
  */
 export const RESULT_MS = 700
-export const WINDUP_MS = 800
+export const WINDUP_MS = 1050
 
 /**
  * 이만큼 연속으로 스윙하지 않으면 자동 투구를 멈춘다.

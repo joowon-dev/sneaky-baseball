@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { battedFlight, battedBall, carry, GRAVITY } from '../src/game/batted.js'
+import { battedFlight, battedBall, carry, travel, GRAVITY } from '../src/game/batted.js'
 import { HOMERUN, HIT, FOUL, WHIFF } from '../src/game/judge.js'
 
 describe('battedFlight', () => {
@@ -82,5 +82,66 @@ describe('battedBall', () => {
 
   it('홈런은 담장(높이 2.3배)을 넘길 만큼 나간다', () => {
     expect(carry(flight)).toBeGreaterThan(2.3)
+  })
+})
+
+describe('바운드', () => {
+  /** 궤적을 촘촘히 훑어 높이의 변곡을 센다 — 떨어졌다가 다시 올라간 횟수. */
+  function bounces(flight) {
+    let count = 0
+    let prev = battedBall(flight, 0).dy
+    let falling = false
+    for (let t = 5; t <= flight.lifeMs; t += 5) {
+      const { dy } = battedBall(flight, t)
+      if (dy < prev) falling = true
+      else if (falling && dy > prev) {
+        count += 1
+        falling = false
+      }
+      prev = dy
+    }
+    return count
+  }
+
+  it('세게 친 공은 땅에 닿고 한 번 튄다', () => {
+    expect(bounces(battedFlight(HOMERUN, 0))).toBe(1)
+  })
+
+  it('튄 공은 처음보다 낮게 뜬다', () => {
+    const flight = battedFlight(HOMERUN, 0)
+    const [first, second] = flight.hops
+    expect(flight.hops.length).toBe(2)
+    expect(second.vy).toBeLessThan(first.vy)
+    expect(second.durMs).toBeLessThan(first.durMs)
+  })
+
+  it('튀고 나면 앞으로 가는 속도도 깎인다', () => {
+    const [first, second] = battedFlight(HOMERUN, 0).hops
+    expect(second.vx).toBeLessThan(first.vx)
+    expect(second.vx).toBeGreaterThan(0)
+  })
+
+  it('힘없이 맞은 공은 튀지 않는다', () => {
+    expect(battedFlight(FOUL, 140).hops.length).toBe(1)
+  })
+
+  it('타격점이 떠 있으면 그만큼 더 떨어져 땅에 닿는다', () => {
+    const high = battedFlight(HOMERUN, 0, 0, 0.2)
+    const flat = battedFlight(HOMERUN, 0, 0, 0)
+    expect(carry(high)).toBeGreaterThan(carry(flat))
+    // 땅에 닿는 순간의 높이는 타격점보다 launchDy만큼 낮다.
+    expect(battedBall(high, high.hops[1].startMs).dy).toBeCloseTo(-0.2, 5)
+  })
+
+  it('튄 거리까지 더하면 처음 닿은 지점보다 멀리 간다', () => {
+    const flight = battedFlight(HOMERUN, 0)
+    expect(travel(flight)).toBeGreaterThan(carry(flight))
+  })
+
+  it('멈춘 뒤에는 그 자리에 서 있는다', () => {
+    const flight = battedFlight(HOMERUN, 0)
+    const rest = travel(flight)
+    expect(battedBall(flight, flight.lifeMs).dx).toBeCloseTo(rest, 5)
+    expect(battedBall(flight, flight.lifeMs).dy).toBeCloseTo(0, 5)
   })
 })

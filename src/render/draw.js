@@ -6,7 +6,7 @@
 //   2. 화면 좌표 — 맞은 공만. 상자를 벗어나 작업 중인 창 위로 솟구친다.
 
 import { ballPosition } from '../game/pitches.js'
-import { battedFlight, battedBall } from '../game/batted.js'
+import { battedFlight, battedBall, travel } from '../game/batted.js'
 import { READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, progress } from '../game/engine.js'
 import { HOMERUN, LABELS, WINDOWS } from '../game/judge.js'
 import {
@@ -36,16 +36,17 @@ const FIELD_H = 78
 const MARGIN_X = 16
 const MARGIN_Y = 8
 
-// 타구 좌표의 단위. 세로는 화면 높이 전체, 가로는 그 일부 — 포물선이 세로로 길어져
-// 화면 안에 아치 하나가 통째로 들어온다.
-const FLIGHT_X_RATIO = 0.55
+// 타구 세로 단위는 화면 높이. 가로 단위는 "가장 멀리 가는 타구가 여기까지"에 맞춘다 —
+// 그래서 공은 화면 밖으로 나가지 않고 화면 안에서 튀다 선다.
+const FLIGHT_FAR_EDGE = 0.9
+const MAX_LANE = 0.06 // 가장 높은 공(가장 멀리 나가는 각도). pitches.js의 LANE_SPREAD 절반
 
 // 타구를 실제 시간보다 느리게 흘려 보낸다. 궤적은 그대로고 속도만 준다 —
-// 화면을 가로지르는 공을 눈으로 따라갈 수 있게. 1보다 작을수록 느리다.
-const FLIGHT_TIME_SCALE = 0.55
+// 날아가는 공을 눈으로 따라갈 수 있게. 1보다 작을수록 느리다.
+const FLIGHT_TIME_SCALE = 0.65
 
-// 공 뒤에 남는 꼬리의 길이 (궤적 시간 기준).
-const TRAIL_MS = 200
+// 공 뒤에 남는 잔상의 길이 (궤적 시간 기준). 점이 아니라 한 줄로 잇는다.
+const TRAIL_MS = 130
 
 const BASE_H = 320 // 이 높이를 기준으로 글자·여백을 비례시킨다
 const PASSED_MS = 280 // 헛스윙한 공이 포수 미트에 닿기까지
@@ -104,7 +105,7 @@ export function draw(ctx, width, height, state, now) {
   ctx.restore()
 
   // 맞은 공만 상자 밖 — 화면 전체를 쓴다.
-  if (state.phase === RESULT) drawFlight(ctx, field, spot, ui, height, state, now)
+  if (state.phase === RESULT) drawFlight(ctx, field, spot, ui, width, height, state, now)
 }
 
 /** 필드 비율을 픽셀 좌표로 한 번에 풀어둔다. */
@@ -219,33 +220,63 @@ function drawPitchedBall(ctx, field, spot, ui, state, now) {
  * 결과 뒤의 공 — 맞았으면 화면 좌표의 포물선, 헛스윙이면 포수 미트로.
  * 화면 좌표로 그리므로 필드 상자를 벗어나 작업 중인 창 위를 가로지른다.
  */
-function drawFlight(ctx, field, spot, ui, screenH, state, now) {
-  const { result, errorMs } = state.lastResult
+function drawFlight(ctx, field, spot, ui, screenW, screenH, state, now) {
   const age = now - state.resultAt
-  const flight = battedFlight(result, errorMs, state.pitch?.lane ?? 0)
-
   const origin = { x: field.x + spot.contact.x, y: field.y + spot.contact.y }
+
+  const unitY = screenH
+  // 타격점이 땅에서 떠 있는 높이 — 공은 이만큼 더 떨어져야 땅에 닿고, 거기서 튄다.
+  const launchDy = (spot.ground - spot.contact.y) / unitY
+
+  const { result, errorMs } = state.lastResult
+  const flight = battedFlight(result, errorMs, state.pitch?.lane ?? 0, launchDy)
 
   if (!flight) {
     drawPassedBall(ctx, field, spot, ui, age)
     return
   }
 
-  const unitY = screenH
-  const unitX = screenH * FLIGHT_X_RATIO
-  const floor = field.y + spot.ground - ui.ballR
+  // 가장 멀리 가는 타구가 화면 오른쪽 FLIGHT_FAR_EDGE 지점에 멈추도록 가로 단위를 잡는다.
+  const far = travel(battedFlight(HOMERUN, 0, -MAX_LANE, launchDy))
+  const unitX = (screenW * FLIGHT_FAR_EDGE - origin.x) / far
+
   // 궤적 상의 시각. 실제로 흐른 시간보다 느리게 간다.
   const flightAge = age * FLIGHT_TIME_SCALE
-
-  // 지나온 자리를 옅게 남겨 궤적이 보이게 한다. back은 궤적 시간 기준 —
-  // 가장 긴 홈런도 (lifeMs + TRAIL_MS) / FLIGHT_TIME_SCALE 안에 끝나야 잘리지 않는다.
-  for (let back = TRAIL_MS; back >= 0; back -= 35) {
-    const at = battedBall(flight, flightAge - back)
-    if (!at) continue
-    const x = origin.x + at.dx * unitX
-    const y = Math.min(floor, origin.y - at.dy * unitY)
-    ball(ctx, x, y, ui.ballR, ui, back === 0 ? 1 : 0.45 - back / 800)
+  const at = (t) => {
+    const p = battedBall(flight, t)
+    return p && { x: origin.x + p.dx * unitX, y: origin.y - p.dy * unitY }
   }
+
+  drawTrail(ctx, at, flightAge, ui)
+
+  const head = at(flightAge)
+  if (head) ball(ctx, head.x, head.y, ui.ballR, ui)
+}
+
+/** 공이 지나온 자리를 한 줄로 잇는다. 점을 띄엄띄엄 찍으면 공이 여러 개로 보인다. */
+function drawTrail(ctx, at, flightAge, ui) {
+  ctx.save()
+  ctx.globalAlpha = 0.22
+  ctx.strokeStyle = INK
+  ctx.lineWidth = ui.ballR * 1.1
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.shadowColor = HALO
+  ctx.shadowBlur = ui.glow
+
+  ctx.beginPath()
+  let started = false
+  for (let back = TRAIL_MS; back > 0; back -= 8) {
+    const p = at(flightAge - back)
+    if (!p) continue
+    if (started) ctx.lineTo(p.x, p.y)
+    else {
+      ctx.moveTo(p.x, p.y)
+      started = true
+    }
+  }
+  if (started) ctx.stroke()
+  ctx.restore()
 }
 
 /** 헛친 공은 타자 뒤로 빠져 사라진다. */
