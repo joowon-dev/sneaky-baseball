@@ -2,19 +2,15 @@
   "name": "sneaky-baseball",
   "version": "0.1.0",
   "private": true,
-  "description": "업무 중에 몰래 하는 미니 위젯 야구 게임",
-  "main": "src/main/main.js",
+  "description": "업무 중에 몰래 하는 바탕화면 야구 게임 (맥·윈도우)",
   "scripts": {
-    "start": "electron .",
+    "start": "./mac/build.sh && open 'dist/mac/Sneaky Baseball.app'",
+    "build:mac": "./mac/build.sh --zip",
+    "icons": "node scripts/make-icons.mjs",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "postinstall": "chmod +x node_modules/node-global-key-listener/bin/MacKeyServer || true"
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
     "vitest": "^2.1.8"
-  },
-  "dependencies": {
-    "node-global-key-listener": "^0.3.0"
   }
 }

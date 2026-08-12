@@ -1,0 +1,69 @@
+# 태그를 밀면 맥·윈도우 빌드를 만들어 릴리스에 붙인다.
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# 윈도우 셸(.NET + WebView2)은 윈도우에서만 빌드된다. 맥에서 만들 수 없어 CI가 맡는다.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm ci
+      - run: npm test
+
+  mac:
+    needs: test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: node scripts/make-icons.mjs
+      - run: ./mac/build.sh --zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: dist/SneakyBaseball-mac.zip
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "9.0.x" }
+      - name: 빌드
+        run: dotnet publish windows/SneakyBaseball.csproj -c Release -o dist/win
+      - name: 압축
+        shell: pwsh
+        run: |
+          # 디버그 심볼은 빼고 담는다.
+          Remove-Item dist/win/*.pdb -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist/win/* -DestinationPath dist/SneakyBaseball-win-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/SneakyBaseball-win-x64.zip
+
+  publish:
+    needs: [mac, windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+          generate_release_notes: true

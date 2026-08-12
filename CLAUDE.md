@@ -9,16 +9,19 @@
   전부 밑의 앱으로 통과시킨다(`setIgnoreMouseEvents`). 항상 위(`screen-saver` 레벨),
   전체화면 앱 위에도 뜬다. Dock 아이콘 없음 — 조작 창구는 메뉴바 트레이(`⚾`)뿐.
   (초기의 900×320 커스텀 앱 창은 폐기)
-- **스택**: Electron + HTML/Canvas 2D. 브라우저에서 `src/renderer/index.html`만 열어도 돌아간다.
+- **스택**: HTML/Canvas 2D + **OS에 이미 있는 웹뷰**. 크로미움을 담지 않아 앱이 0.5MB다.
+  껍데기는 플랫폼마다 따로 있다 — 맥은 Swift+WKWebView(`mac/`), 윈도우는 .NET+WebView2(`windows/`).
+  둘 다 게임 코드(`src/`)를 손대지 않고 그대로 실어 나르고, 같은 모양의 `window.sneaky`
+  브리지를 만들어 준다. 브라우저에서 `src/renderer/index.html`만 열어도 돌아간다.
 - **시점**: 측면 2D — 왼쪽에 타자·포수, 오른쪽에 투수, 그 뒤에 담장.
 - **배치**: 선수·지면·담장·투구는 화면 왼쪽 아래 구석의 작은 필드 상자(`draw.js`의
   `FIELD_W`×`FIELD_H`) 안에만. **맞은 공만** 상자를 벗어나 화면 좌표로 날아간다.
 - **아트**: 배경 없는 검은 실루엣. 어두운 앱 위에서도 읽히도록 흰 글로우를 깔고 그린다.
 - **조작**: **`⌥`(Option)을 누르고 있는 동안만** 투수가 던지고, 떼면 즉시 대기.
   스윙은 `⌥Space`. 오버레이는 포커스를 받지 않아 일반 키 이벤트가 오지 않으므로
-  스윙은 전역 단축키로 받고, 수식키의 눌림/뗌은 `node-global-key-listener`로 따로 듣는다
-  (macOS 손쉬운 사용 권한 필요). 권한이 없으면 ⌥ 감지만 조용히 죽고, `⌥Space`를
-  누를 때마다 한 구씩 던지는 방식으로 계속 플레이할 수 있다.
+  스윙은 전역 단축키(맥 Carbon 핫키 / 윈도우 RegisterHotKey), ⌥ 눌림 여부는 30Hz로
+  **상태를 물어봐서** 안다(`NSEvent.modifierFlags` / `GetAsyncKeyState`).
+  키 이벤트를 엿듣는 게 아니라서 **손쉬운 사용 권한이 필요 없다.**
   브라우저로 열었을 때는 그냥 `Space`이고 늘 자동 투구다.
 - **판정**: 타이밍은 **맞았는지**까지만 정한다 — 굿(≤80ms) 안타 / 파울(≤150ms) /
   그 외 헛스윙. **홈런은 타구가 담장을 넘어갔는지로 갈린다.**
@@ -51,23 +54,31 @@
 
 ## 실행
 ```
-npm install
-npm start      # Electron 앱
-npm test       # 순수 모듈 단위 테스트 (vitest)
+npm test           # 순수 모듈 단위 테스트 (vitest)
+npm start          # 맥 앱을 빌드해서 띄운다 (mac/build.sh)
+npm run build:mac  # dist/SneakyBaseball-mac.zip 까지
+npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ico)
 ```
-`SNEAKY_DEBUG=1 npm start` 로 렌더러 콘솔을 터미널에 흘려볼 수 있다.
+윈도우 빌드는 윈도우에서만 된다 — `.github/workflows/release.yml` 가 태그를 밀 때 만든다.
+`SNEAKY_DEBUG=1` 로 셸 로그를, `SNEAKY_PROBE=1` 로 웹뷰 상태를 stderr 에 흘려볼 수 있다.
 
 ## 구조
 - `src/game/` — 순수 모듈. Electron·Canvas를 모른다. 시간은 항상 인자(`now`)로 받는다.
   - `pitches.js` 구종·궤적·난이도 / `judge.js` 판정 / `batted.js` 타구 / `engine.js` 상태 전이
 - `src/render/` — `sprites.js` 실루엣 포즈, `draw.js` 프레임 렌더
-- `src/renderer/` — 루프·입력 / `src/main/` — 오버레이 창·트레이·전역 단축키·영속화
+- `src/renderer/` — 루프·입력. `window.sneaky` 가 있으면 앱, 없으면 브라우저로 친다.
+- `mac/` — Swift 셸 (창·핫키·트레이·저장) + `build.sh` / `windows/` — 같은 일을 하는 .NET 셸
+- `scripts/make-icons.mjs` — 아이콘을 코드로 그린다. 의존성 없음.
 - `test/` — `src/game/`만 테스트한다. 렌더링과 창 동작(클릭 통과·항상 위·전역 키)은 수동 확인.
 
 설계 문서:
 - `docs/superpowers/specs/2026-08-12-sneaky-baseball-design.md` (최초 설계)
 - `docs/superpowers/specs/2026-08-12-overlay-mode-design.md` (오버레이 전환)
 
+## 배포
+- 태그(`v*`)를 밀면 CI가 맥 zip · 윈도우 zip 을 만들어 릴리스에 붙인다.
+- 사이트(joowonkoh.com)의 `/playground/sneaky-baseball` 이 그 릴리스를 가리킨다.
+
 ## 남은 것
-- 배포용 `.app` 패키징 (electron-builder 등) — 아직 없음
+- 코드 서명·공증 없음 — 맥은 우클릭 → 열기, 윈도우는 SmartScreen 경고를 한 번 넘겨야 한다.
 - 사운드는 의도적으로 없음
