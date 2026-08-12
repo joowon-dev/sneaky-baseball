@@ -103,16 +103,17 @@ describe('바운드', () => {
     return count
   }
 
-  it('세게 친 공은 땅에 닿고 한 번 튄다', () => {
-    expect(bounces(battedFlight(HOMERUN, 0))).toBe(1)
+  it('세게 친 공은 여러 번 튄다', () => {
+    expect(bounces(battedFlight(HOMERUN, 0))).toBeGreaterThan(1)
   })
 
-  it('튄 공은 처음보다 낮게 뜬다', () => {
-    const flight = battedFlight(HOMERUN, 0)
-    const [first, second] = flight.hops
-    expect(flight.hops.length).toBe(2)
-    expect(second.vy).toBeLessThan(first.vy)
-    expect(second.durMs).toBeLessThan(first.durMs)
+  it('튈수록 낮아지고 간격도 짧아진다', () => {
+    const { hops } = battedFlight(HOMERUN, 0)
+    expect(hops.length).toBeGreaterThan(2)
+    for (let i = 1; i < hops.length - 1; i += 1) {
+      expect(hops[i + 1].vy).toBeLessThan(hops[i].vy)
+      expect(hops[i + 1].durMs).toBeLessThan(hops[i].durMs)
+    }
   })
 
   it('튀고 나면 앞으로 가는 속도도 깎인다', () => {
@@ -121,8 +122,8 @@ describe('바운드', () => {
     expect(second.vx).toBeGreaterThan(0)
   })
 
-  it('힘없이 맞은 공은 튀지 않는다', () => {
-    expect(battedFlight(FOUL, 140).hops.length).toBe(1)
+  it('약하게 맞은 공은 세게 맞은 공보다 덜 튄다', () => {
+    expect(bounces(battedFlight(FOUL, 140))).toBeLessThan(bounces(battedFlight(HOMERUN, 0)))
   })
 
   it('타격점이 떠 있으면 그만큼 더 떨어져 땅에 닿는다', () => {
@@ -143,5 +144,43 @@ describe('바운드', () => {
     const rest = travel(flight)
     expect(battedBall(flight, flight.lifeMs).dx).toBeCloseTo(rest, 5)
     expect(battedBall(flight, flight.lifeMs).dy).toBeCloseTo(0, 5)
+  })
+})
+
+describe('구르기', () => {
+  const flight = battedFlight(HOMERUN, 0)
+  const { roll } = flight
+
+  it('그만 튀면 땅에 붙어 굴러간다', () => {
+    const mid = battedBall(flight, roll.startMs + roll.durMs / 2)
+    expect(mid.dy).toBeCloseTo(0, 5)
+    expect(mid.dx).toBeGreaterThan(roll.x0)
+  })
+
+  it('구르는 동안 점점 느려진다', () => {
+    const step = roll.durMs / 4
+    const at = (i) => battedBall(flight, roll.startMs + step * i).dx
+    const first = at(1) - at(0)
+    const last = at(4) - at(3)
+    expect(last).toBeGreaterThan(0)
+    expect(last).toBeLessThan(first)
+  })
+
+  it('스스로 멈춘다 — 끝에서 속도가 0이다', () => {
+    const end = roll.startMs + roll.durMs
+    const before = battedBall(flight, end - 1).dx
+    const after = battedBall(flight, end).dx
+    expect(after - before).toBeCloseTo(0, 4)
+  })
+
+  it('파울처럼 뒤로 간 공은 뒤로 구르다 멈춘다', () => {
+    const foul = battedFlight(FOUL, 120)
+    expect(foul.roll.vx).toBeLessThan(0)
+    expect(travel(foul)).toBeLessThan(foul.roll.x0)
+  })
+
+  it('멈춘 뒤 잠깐 남았다가 수명이 끝난다', () => {
+    expect(flight.lifeMs).toBe(Math.round(roll.startMs + roll.durMs) + flight.fadeMs)
+    expect(battedBall(flight, flight.lifeMs + 1)).toBeNull()
   })
 })

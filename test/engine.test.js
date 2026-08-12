@@ -25,10 +25,17 @@ describe('startPitch', () => {
     expect(startPitch(s, PITCH, T0 + 100)).toBe(s)
   })
 
-  it('직전 결과를 지운다', () => {
+  it('직전 결과를 지우지 않는다 — 친 공은 다음 공이 와도 계속 굴러간다', () => {
     const after = swingWith(0)
     const ready = settle(after, after.resultAt + RESULT_MS + WINDUP_MS)
-    expect(startPitch(ready, PITCH, 9_999).lastResult).toBeNull()
+    const next = startPitch(ready, PITCH, 9_999)
+    expect(next.lastResult).toEqual(after.lastResult)
+    expect(next.resultAt).toBe(after.resultAt)
+  })
+
+  it('타구가 어떤 높이의 공이었는지 결과에 남긴다', () => {
+    const pitching = startPitch(createGame(), { ...PITCH, lane: 0.04 }, T0)
+    expect(swing(pitching, pitching.plateAt).lastResult.lane).toBe(0.04)
   })
 })
 

@@ -17,9 +17,10 @@ const FOUL_SPEED_RATIO = -0.5 // 파울은 뒤로, 힘도 빠진다
 
 const BOUNCE = 0.42 // 땅에 부딪히고 남는 수직 속도
 const BOUNCE_DRAG = 0.72 // 튈 때마다 앞으로 가는 속도도 깎인다
-const MIN_BOUNCE_VY = 0.55 // 이보다 약하게 튀면 그냥 선다
-const MAX_HOPS = 4
-const SETTLE_MS = 150 // 멈춘 공을 잠깐 더 보여주는 여유
+const MIN_BOUNCE_VY = 0.25 // 이보다 약하게 튀면 더 튀지 않고 구르기 시작한다
+const MAX_HOPS = 5
+const ROLL_DECEL = 4 // 구를 때의 감속 (필드 높이 / 초²)
+const FADE_MS = 350 // 멈춘 공이 사라지기까지
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
@@ -45,9 +46,17 @@ export function battedFlight(result, errorMs, lane = 0, launchDy = 0) {
   const vx = speed * Math.cos(rad) * (result === FOUL ? FOUL_SPEED_RATIO : 1)
 
   const hops = buildHops(vx, vy, launchDy)
-  const last = hops[hops.length - 1]
+  const roll = buildRoll(hops)
 
-  return { vx, vy, launchDy, hops, lifeMs: Math.round(last.startMs + last.durMs) + SETTLE_MS }
+  return {
+    vx,
+    vy,
+    launchDy,
+    hops,
+    roll,
+    lifeMs: Math.round(roll.startMs + roll.durMs) + FADE_MS,
+    fadeMs: FADE_MS,
+  }
 }
 
 /**
@@ -81,13 +90,37 @@ function buildHops(vx, vy, launchDy) {
   return hops
 }
 
+/** 그만 튀면 남은 속도로 땅을 굴러간다. 마찰로 일정하게 감속해 스스로 멈춘다. */
+function buildRoll(hops) {
+  const last = hops[hops.length - 1]
+  const vx = last.vx
+  const speed = Math.abs(vx)
+
+  return {
+    startMs: last.startMs + last.durMs,
+    durMs: (speed / ROLL_DECEL) * 1000,
+    x0: last.x0 + vx * (last.durMs / 1000),
+    vx,
+    decel: Math.sign(vx) * ROLL_DECEL, // 굴러가는 반대 방향으로 작용한다
+  }
+}
+
 /** 맞은 뒤 ageMs가 지난 시점의 위치. 수명이 지나면 null. */
 export function battedBall(flight, ageMs) {
   if (!flight || ageMs < 0 || ageMs > flight.lifeMs) return null
 
+  const { roll } = flight
+  if (ageMs >= roll.startMs) {
+    // 다 구르고 나면(FADE 동안) 그 자리에 서 있는다.
+    const s = Math.min(ageMs - roll.startMs, roll.durMs) / 1000
+    return {
+      dx: roll.x0 + roll.vx * s - 0.5 * roll.decel * s * s,
+      dy: -flight.launchDy,
+    }
+  }
+
   const hop = hopAt(flight.hops, ageMs)
-  // 마지막 구간이 끝난 뒤(SETTLE)에는 그 자리에 멈춰 있는다.
-  const s = Math.min(ageMs - hop.startMs, hop.durMs) / 1000
+  const s = (ageMs - hop.startMs) / 1000
 
   return {
     dx: hop.x0 + hop.vx * s,
@@ -109,9 +142,10 @@ export function carry(flight) {
   return first.vx * (first.durMs / 1000)
 }
 
-/** 튄 것까지 더해 공이 최종적으로 멈추는 거리. 화면 폭을 맞출 때 쓴다. */
+/** 튀고 구른 것까지 더해 공이 최종적으로 멈추는 거리. 화면 폭을 맞출 때 쓴다. */
 export function travel(flight) {
   if (!flight) return 0
-  const last = flight.hops[flight.hops.length - 1]
-  return last.x0 + last.vx * (last.durMs / 1000)
+  const { roll } = flight
+  const s = roll.durMs / 1000
+  return roll.x0 + roll.vx * s - 0.5 * roll.decel * s * s
 }

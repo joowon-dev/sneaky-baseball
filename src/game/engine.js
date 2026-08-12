@@ -8,10 +8,10 @@ export const RESULT = 'result'
 
 /**
  * 결과를 보여주는 시간, 다음 투구까지의 간격 (ms).
- * 둘을 더한 값이 타구가 화면을 가로지르는 데 걸리는 시간보다 길어야 궤적이 잘리지 않는다.
+ * 타구는 이 간격과 무관하게 제 수명대로 굴러가므로 여기에 맞출 필요가 없다.
  */
 export const RESULT_MS = 700
-export const WINDUP_MS = 1050
+export const WINDUP_MS = 700
 
 /**
  * 이만큼 연속으로 스윙하지 않으면 자동 투구를 멈춘다.
@@ -46,7 +46,7 @@ export function startPitch(state, pitch, now) {
     pitchStartedAt: now,
     plateAt: now + pitch.flightMs,
     pitches: state.pitches + 1,
-    lastResult: null,
+    // lastResult는 지우지 않는다 — 직전 타구는 다음 공이 오는 동안에도 계속 굴러간다.
   }
 }
 
@@ -83,7 +83,8 @@ function applyResult(state, verdict, now) {
   const next = {
     ...state,
     phase: RESULT,
-    lastResult: verdict,
+    // 공의 높낮이를 함께 남긴다 — 다음 공이 와도 이 타구의 궤적은 그대로여야 한다.
+    lastResult: { ...verdict, lane: state.pitch?.lane ?? 0 },
     resultAt: now,
     takes: verdict.timing === 'take' ? state.takes + 1 : 0,
   }

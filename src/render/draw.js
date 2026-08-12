@@ -104,8 +104,8 @@ export function draw(ctx, width, height, state, now) {
   if (state.phase === READY && !state.pitch) drawHint(ctx, field, ui, now)
   ctx.restore()
 
-  // 맞은 공만 상자 밖 — 화면 전체를 쓴다.
-  if (state.phase === RESULT) drawFlight(ctx, field, spot, ui, width, height, state, now)
+  // 맞은 공만 상자 밖 — 화면 전체를 쓴다. 페이즈와 무관하게 제 수명만큼 굴러간다.
+  if (state.lastResult) drawFlight(ctx, field, spot, ui, width, height, state, now)
 }
 
 /** 필드 비율을 픽셀 좌표로 한 번에 풀어둔다. */
@@ -228,8 +228,8 @@ function drawFlight(ctx, field, spot, ui, screenW, screenH, state, now) {
   // 타격점이 땅에서 떠 있는 높이 — 공은 이만큼 더 떨어져야 땅에 닿고, 거기서 튄다.
   const launchDy = (spot.ground - spot.contact.y) / unitY
 
-  const { result, errorMs } = state.lastResult
-  const flight = battedFlight(result, errorMs, state.pitch?.lane ?? 0, launchDy)
+  const { result, errorMs, lane } = state.lastResult
+  const flight = battedFlight(result, errorMs, lane ?? 0, launchDy)
 
   if (!flight) {
     drawPassedBall(ctx, field, spot, ui, age)
@@ -247,16 +247,19 @@ function drawFlight(ctx, field, spot, ui, screenW, screenH, state, now) {
     return p && { x: origin.x + p.dx * unitX, y: origin.y - p.dy * unitY }
   }
 
-  drawTrail(ctx, at, flightAge, ui)
+  // 다 구르고 멈춘 공은 그 자리에서 서서히 사라진다.
+  const fade = clamp((flight.lifeMs - flightAge) / flight.fadeMs, 0, 1)
+
+  drawTrail(ctx, at, flightAge, ui, fade)
 
   const head = at(flightAge)
-  if (head) ball(ctx, head.x, head.y, ui.ballR, ui)
+  if (head) ball(ctx, head.x, head.y, ui.ballR, ui, fade)
 }
 
 /** 공이 지나온 자리를 한 줄로 잇는다. 점을 띄엄띄엄 찍으면 공이 여러 개로 보인다. */
-function drawTrail(ctx, at, flightAge, ui) {
+function drawTrail(ctx, at, flightAge, ui, fade) {
   ctx.save()
-  ctx.globalAlpha = 0.22
+  ctx.globalAlpha = 0.22 * fade
   ctx.strokeStyle = INK
   ctx.lineWidth = ui.ballR * 1.1
   ctx.lineCap = 'round'
