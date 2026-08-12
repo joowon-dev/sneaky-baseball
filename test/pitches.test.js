@@ -1,0 +1,89 @@
+import { describe, it, expect } from 'vitest'
+import { speedFactor, curveRatio, nextPitch, ballPosition, FASTBALL, CURVE } from '../src/game/pitches.js'
+
+/** 정해진 값들을 순서대로 내주는 가짜 난수. */
+function fakeRand(...values) {
+  let i = 0
+  return () => values[i++]
+}
+
+describe('speedFactor', () => {
+  it('처음에는 원래 속도다', () => {
+    expect(speedFactor(0)).toBe(1)
+  })
+
+  it('홈런마다 2%씩 빨라진다', () => {
+    expect(speedFactor(10)).toBeCloseTo(0.8)
+  })
+
+  it('0.62 아래로는 내려가지 않는다', () => {
+    expect(speedFactor(19)).toBeCloseTo(0.62)
+    expect(speedFactor(500)).toBe(0.62)
+  })
+})
+
+describe('curveRatio', () => {
+  it('25%에서 시작해 홈런마다 3%씩 오른다', () => {
+    expect(curveRatio(0)).toBeCloseTo(0.25)
+    expect(curveRatio(5)).toBeCloseTo(0.4)
+  })
+
+  it('55%를 넘지 않는다', () => {
+    expect(curveRatio(10)).toBeCloseTo(0.55)
+    expect(curveRatio(500)).toBe(0.55)
+  })
+})
+
+describe('nextPitch', () => {
+  it('난수가 변화구 비율보다 작으면 변화구다', () => {
+    expect(nextPitch(0, fakeRand(0.24, 0.5)).type).toBe(CURVE)
+    expect(nextPitch(0, fakeRand(0.26, 0.5)).type).toBe(FASTBALL)
+  })
+
+  it('직구는 떨어지지 않고 변화구는 떨어진다', () => {
+    expect(nextPitch(0, fakeRand(0.99, 0.5)).drop).toBe(0)
+    expect(nextPitch(0, fakeRand(0.01, 0.5)).drop).toBeGreaterThan(0)
+  })
+
+  it('두 번째 난수가 공의 높낮이를 정한다', () => {
+    expect(nextPitch(0, fakeRand(0.5, 0.5)).lane).toBe(0)
+    expect(nextPitch(0, fakeRand(0.5, 0)).lane).toBeCloseTo(-0.06)
+    expect(nextPitch(0, fakeRand(0.5, 1)).lane).toBeCloseTo(0.06)
+  })
+
+  it('비행 시간에 난이도가 반영된다', () => {
+    expect(nextPitch(0, fakeRand(0.99, 0.5)).flightMs).toBe(900)
+    expect(nextPitch(10, fakeRand(0.99, 0.5)).flightMs).toBe(720)
+  })
+})
+
+describe('ballPosition', () => {
+  const curve = { flightMs: 1000, drop: 0.18, lane: 0.02 }
+
+  it('릴리스에서는 진행 0이고 높낮이만 반영된다', () => {
+    expect(ballPosition(curve, 0)).toEqual({ travel: 0, offset: 0.02 })
+  })
+
+  it('타격점에서는 변화가 다 적용된다', () => {
+    const at = ballPosition(curve, 1)
+    expect(at.travel).toBe(1)
+    expect(at.offset).toBeCloseTo(0.2)
+  })
+
+  it('변화는 후반에 몰린다', () => {
+    const half = ballPosition(curve, 0.5)
+    expect(half.offset - curve.lane).toBeLessThan(curve.drop * 0.5)
+    expect(half.offset).toBeGreaterThan(curve.lane)
+  })
+
+  it('직구는 끝까지 같은 높이로 온다', () => {
+    const straight = { flightMs: 900, drop: 0, lane: -0.03 }
+    expect(ballPosition(straight, 0).offset).toBe(-0.03)
+    expect(ballPosition(straight, 1).offset).toBe(-0.03)
+  })
+
+  it('범위를 벗어난 진행률은 잘라낸다', () => {
+    expect(ballPosition(curve, -1)).toEqual(ballPosition(curve, 0))
+    expect(ballPosition(curve, 2)).toEqual(ballPosition(curve, 1))
+  })
+})

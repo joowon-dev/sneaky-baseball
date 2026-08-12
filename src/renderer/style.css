@@ -1,0 +1,24 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* 데스크톱 위에 얹히는 오버레이 — 배경은 완전히 투명하다. */
+  background: transparent;
+  cursor: default;
+  user-select: none;
+  /* 클릭 통과는 창 단에서도 막지만, 브라우저에서 열었을 때를 위해 여기서도. */
+  pointer-events: none;
+}
+
+#stage {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
