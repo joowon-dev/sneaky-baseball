@@ -82,8 +82,15 @@ describe('ballPosition', () => {
     expect(ballPosition(straight, 1).offset).toBe(-0.03)
   })
 
-  it('범위를 벗어난 진행률은 잘라낸다', () => {
+  it('릴리스 이전은 릴리스로 잘라낸다', () => {
     expect(ballPosition(curve, -1)).toEqual(ballPosition(curve, 0))
-    expect(ballPosition(curve, 2)).toEqual(ballPosition(curve, 1))
+  })
+
+  it('타격점을 지나도 멈추지 않고 계속 간다 — 안 친 공은 뒤로 빠져야 한다', () => {
+    expect(ballPosition(curve, 1.3).travel).toBeCloseTo(1.3)
+  })
+
+  it('타격점을 지나면 더 휘지는 않는다', () => {
+    expect(ballPosition(curve, 1.3).offset).toBeCloseTo(ballPosition(curve, 1).offset)
   })
 })

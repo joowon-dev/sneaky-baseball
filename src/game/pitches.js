@@ -39,15 +39,17 @@ export function nextPitch(homeRuns, rand = Math.random) {
 const clamp01 = (v) => Math.min(1, Math.max(0, v))
 
 /**
- * 진행률 t(0..1)에서 공의 위치.
- * travel은 릴리스(0)에서 타격점(1)까지의 진행,
+ * 진행률 t에서 공의 위치.
+ * travel은 릴리스(0)에서 타격점(1)까지의 진행. **1을 넘어서도 계속 간다** —
+ * 안 친 공은 타격점에 멈추는 게 아니라 그대로 뒤로 빠져야 한다.
  * offset은 기준선에서 아래로 벗어난 양(필드 높이 비율, 양수가 아래).
- * 변화는 t³에 비례해 후반에 몰린다. 도달 시각은 바꾸지 않는다 — 눈속임 전용.
+ * 변화는 t³에 비례해 후반에 몰리고, 타격점을 지나면 더 휘지 않는다.
  */
 export function ballPosition(pitch, t) {
-  const p = clamp01(t)
+  const p = Math.max(0, t)
+  const broken = clamp01(p)
   return {
     travel: p,
-    offset: pitch.lane + pitch.drop * p * p * p,
+    offset: pitch.lane + pitch.drop * broken * broken * broken,
   }
 }

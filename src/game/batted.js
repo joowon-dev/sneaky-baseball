@@ -22,12 +22,13 @@ const DEG_PER_LANE = 40 // 낮은 공일수록 각도가 깎인다
 const FOUL_SPEED_RATIO = -0.5 // 파울은 뒤로, 힘도 빠진다
 
 const BOUNCE = 0.42 // 땅에 부딪히고 남는 수직 속도
-// 튀고 구르는 거리를 짧게 잡는다 — 전체 거리의 대부분이 날아간 거리(캐리)여야
-// 홈런이 화면 반대편 끝까지 "날아간" 것으로 보인다. 지금 비율은 캐리가 84%.
-const BOUNCE_DRAG = 0.4 // 튈 때마다 앞으로 가는 속도가 깎이는 비율
+// 튀고 구르는 거리를 바짝 줄인다 — 전체 거리의 91%가 날아간 거리(캐리)여야
+// 홈런이 화면 반대편 끝에 "떨어지는" 것으로 보인다. 튀는 높이는 그대로라,
+// 공은 끝에서 제자리에 가깝게 통통 튀고 선다.
+const BOUNCE_DRAG = 0.22 // 튈 때마다 앞으로 가는 속도가 깎이는 비율
 const MIN_BOUNCE_VY = 0.25 // 이보다 약하게 튀면 더 튀지 않고 구르기 시작한다
 const MAX_HOPS = 5
-const ROLL_DECEL = 10 // 구를 때의 감속 (필드 높이 / 초²)
+const ROLL_DECEL = 12 // 구를 때의 감속 (필드 높이 / 초²)
 const FADE_MS = 350 // 멈춘 공이 사라지기까지
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))

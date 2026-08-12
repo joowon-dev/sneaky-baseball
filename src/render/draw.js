@@ -8,7 +8,7 @@
 import { ballPosition } from '../game/pitches.js'
 import { battedFlight, battedBall, travel, TIME_SCALE } from '../game/batted.js'
 import { READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, progress } from '../game/engine.js'
-import { HOMERUN, LABELS, WINDOWS } from '../game/judge.js'
+import { HOMERUN, WHIFF, LABELS, WINDOWS } from '../game/judge.js'
 import {
   drawFigure, batterStance, batterSwing, pitcherWindup, pitcherRelease,
 } from './sprites.js'
@@ -21,7 +21,6 @@ const HALO = 'rgba(255, 255, 255, 0.92)'
 
 // 필드 좌표는 0..1 비율. x는 왼쪽(백네트)에서 오른쪽(외야)으로.
 const GROUND_Y = 0.92
-const BACKSTOP_X = 0.07 // 헛친 공이 굴러가 사라지는 자리
 const BATTER_X = 0.19
 const PITCHER_X = 0.87
 const BATTER_H = 0.62
@@ -41,14 +40,18 @@ const MARGIN_Y = 8
 
 // 타구 세로 단위는 화면 높이. 가로 단위는 "가장 멀리 가는 타구가 여기서 멈춘다"에 맞춘다 —
 // 그래서 공은 화면 밖으로 나가지 않는다. 거의 끝까지 잡아 홈런이 화면 반대편에 떨어지게 한다.
-const FLIGHT_FAR_EDGE = 0.97
+const FLIGHT_FAR_EDGE = 0.98
 const MAX_LANE = 0.06 // 가장 높은 공(가장 멀리 나가는 각도). pitches.js의 LANE_SPREAD 절반
 
 // 공 뒤에 남는 잔상의 길이 (궤적 시간 기준). 점이 아니라 한 줄로 잇는다.
 const TRAIL_MS = 130
 
 const BASE_H = 320 // 이 높이를 기준으로 글자·여백을 비례시킨다
-const PASSED_MS = 280 // 헛스윙한 공이 포수 미트에 닿기까지
+
+// 안 친 공은 타격점(진행률 1)에 멈추는 게 아니라 그대로 뒤로 빠진다.
+// 이 진행률에서 백네트에 닿아 사라진다.
+const PASSED_TRAVEL = 1.35
+const PASSED_FADE = 0.3 // 사라지기 시작하는 지점 (진행률)
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
@@ -100,7 +103,11 @@ export function draw(ctx, width, height, state, now) {
   drawContactMark(ctx, spot, ui, state, now)
   drawPeople(ctx, field, spot, ui, state, now)
 
-  if (state.phase === PITCHING) drawPitchedBall(ctx, field, spot, ui, state, now)
+  // 안 친 공은 결과가 난 뒤에도 계속 날아가 뒤로 빠진다.
+  const missed = state.phase === RESULT && state.lastResult?.result === WHIFF
+  if (state.pitch && (state.phase === PITCHING || missed)) {
+    drawPitchedBall(ctx, field, spot, ui, state, now)
+  }
 
   drawVerdict(ctx, field, ui, state, now)
   if (state.phase === READY && !state.pitch) drawHint(ctx, field, ui, now)
@@ -233,12 +240,16 @@ function ball(ctx, x, y, r, ui, alpha = 1) {
 
 function drawPitchedBall(ctx, field, spot, ui, state, now) {
   const t = progress(state, now)
+  if (t > PASSED_TRAVEL) return
+
+  // 백네트에 가까워지면 옅어진다.
+  const fade = clamp((PASSED_TRAVEL - t) / PASSED_FADE, 0, 1)
 
   for (const back of [0.07, 0.035, 0]) {
     const { travel, offset } = ballPosition(state.pitch, t - back)
     const x = spot.release.x + (spot.contact.x - spot.release.x) * travel
     const y = spot.release.y + (spot.contact.y - spot.release.y) * travel + offset * field.h
-    ball(ctx, x, y, ui.ballR, ui, back === 0 ? 1 : 0.2)
+    ball(ctx, x, y, ui.ballR, ui, (back === 0 ? 1 : 0.2) * fade)
   }
 }
 
@@ -251,10 +262,7 @@ function drawFlight(ctx, field, spot, ui, space, state, now) {
   const { result, errorMs, lane } = state.lastResult
   const flight = battedFlight(result, errorMs, lane ?? 0, space.launchDy)
 
-  if (!flight) {
-    drawPassedBall(ctx, field, spot, ui, age)
-    return
-  }
+  if (!flight) return // 헛친 공은 투구 궤적을 따라 그대로 뒤로 빠진다
 
   // 궤적 상의 시각. 실제로 흐른 시간보다 느리게 간다.
   const flightAge = age * TIME_SCALE
@@ -295,17 +303,6 @@ function drawTrail(ctx, at, flightAge, ui, fade) {
     }
   }
   if (started) ctx.stroke()
-  ctx.restore()
-}
-
-/** 헛친 공은 타자 뒤로 빠져 사라진다. */
-function drawPassedBall(ctx, field, spot, ui, age) {
-  if (age > PASSED_MS) return
-  const t = age / PASSED_MS
-  const x = spot.contact.x + (field.w * BACKSTOP_X - spot.contact.x) * t
-  ctx.save()
-  ctx.translate(field.x, field.y)
-  ball(ctx, x, spot.contact.y + t * ui.tick * 0.6, ui.ballR, ui, 1 - t * 0.5)
   ctx.restore()
 }
 
