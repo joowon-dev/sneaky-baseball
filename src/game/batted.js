@@ -31,6 +31,13 @@ const MAX_HOPS = 5
 const ROLL_DECEL = 12 // 구를 때의 감속 (필드 높이 / 초²)
 const FADE_MS = 350 // 멈춘 공이 사라지기까지
 
+/**
+ * 담장까지의 거리. 타구가 이만큼 날아가면(캐리) 홈런이다.
+ * 판정 기준이자 화면에 그리는 담장 선의 위치 — 둘이 같은 값이라 보이는 대로 판정된다.
+ * 퍼펙트 타이밍은 2.84까지 날아가고, 20ms쯤 어긋나면 2.36으로 못 넘는다.
+ */
+export const FENCE_CARRY = 2.3
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
 /**
@@ -155,6 +162,11 @@ export function carry(flight) {
 export function restMs(flight) {
   if (!flight) return 0
   return (flight.roll.startMs + flight.roll.durMs) / TIME_SCALE
+}
+
+/** 담장을 넘겼는가 — 홈런 판정. */
+export function clearsFence(flight) {
+  return carry(flight) >= FENCE_CARRY
 }
 
 /** 튀고 구른 것까지 더해 공이 최종적으로 멈추는 거리. 화면 폭을 맞출 때 쓴다. */

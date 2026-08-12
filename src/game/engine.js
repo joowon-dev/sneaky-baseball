@@ -1,7 +1,7 @@
 // 게임 상태 전이. 모든 함수는 새 상태를 반환하는 순수 함수다.
 
 import { HOMERUN, HIT, FOUL, WHIFF, WINDOWS, judgeSwing, judgeTake } from './judge.js'
-import { battedFlight, restMs } from './batted.js'
+import { battedFlight, restMs, clearsFence } from './batted.js'
 
 export const READY = 'ready'
 export const PITCHING = 'pitching'
@@ -92,16 +92,19 @@ function applyResult(state, verdict, now) {
   // 타격 높이(launchDy)는 그리는 쪽 사정이고 멈추는 시각에 미치는 영향은 몇 ms라 여기선 뺀다.
   const flight = battedFlight(verdict.result, verdict.errorMs, lane)
 
+  // 홈런은 타이밍이 아니라 담장을 넘었는지로 갈린다. 화면에 그려진 그 선 그대로다.
+  const result = verdict.result === HIT && clearsFence(flight) ? HOMERUN : verdict.result
+
   const next = {
     ...state,
     phase: RESULT,
     // 공의 높낮이를 함께 남긴다 — 다음 공이 와도 이 타구의 궤적은 그대로여야 한다.
-    lastResult: { ...verdict, lane },
+    lastResult: { ...verdict, result, lane },
     resultAt: now,
     restAt: now + restMs(flight),
   }
 
-  switch (verdict.result) {
+  switch (result) {
     case HOMERUN:
       next.homeRuns += 1
       next.hits += 1

@@ -1,19 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { judgeSwing, judgeTake, HOMERUN, HIT, FOUL, WHIFF } from '../src/game/judge.js'
+import { judgeSwing, judgeTake, HIT, FOUL, WHIFF } from '../src/game/judge.js'
 
 const PLATE = 10_000
 
 describe('judgeSwing', () => {
-  it('정확히 맞으면 홈런', () => {
-    expect(judgeSwing(PLATE, PLATE)).toMatchObject({ result: HOMERUN, timing: 'perfect', errorMs: 0 })
+  it('홈런은 여기서 정하지 않는다 — 맞았는지까지만', () => {
+    expect(judgeSwing(PLATE, PLATE)).toMatchObject({ result: HIT, timing: 'perfect', errorMs: 0 })
   })
 
-  it('퍼펙트 윈도우 경계(35ms)는 양쪽 모두 홈런', () => {
-    expect(judgeSwing(PLATE - 35, PLATE).result).toBe(HOMERUN)
-    expect(judgeSwing(PLATE + 35, PLATE).result).toBe(HOMERUN)
+  it('퍼펙트 윈도우 경계(35ms)까지는 타이밍이 perfect', () => {
+    expect(judgeSwing(PLATE - 35, PLATE).timing).toBe('perfect')
+    expect(judgeSwing(PLATE + 35, PLATE).timing).toBe('perfect')
   })
 
-  it('퍼펙트를 1ms 벗어나면 안타', () => {
+  it('퍼펙트를 1ms 벗어나면 빠름/늦음으로 갈린다', () => {
     expect(judgeSwing(PLATE - 36, PLATE)).toMatchObject({ result: HIT, timing: 'early' })
     expect(judgeSwing(PLATE + 36, PLATE)).toMatchObject({ result: HIT, timing: 'late' })
   })

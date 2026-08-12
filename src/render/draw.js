@@ -6,7 +6,7 @@
 //   2. 화면 좌표 — 맞은 공만. 상자를 벗어나 작업 중인 창 위로 솟구친다.
 
 import { ballPosition } from '../game/pitches.js'
-import { battedFlight, battedBall, travel, TIME_SCALE } from '../game/batted.js'
+import { battedFlight, battedBall, carry, FENCE_CARRY, TIME_SCALE } from '../game/batted.js'
 import { READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, progress } from '../game/engine.js'
 import { HOMERUN, WHIFF, LABELS, WINDOWS } from '../game/judge.js'
 import {
@@ -26,10 +26,8 @@ const PITCHER_X = 0.87
 const BATTER_H = 0.62
 const PITCHER_H = 0.5
 
-// 담장. 필드 상자가 아니라 타구 좌표에 산다 — 넘기면 홈런인 그 선.
-// 퍼펙트 타이밍(캐리 2.8)은 넘고, 굿 타이밍 경계(캐리 1.9)는 못 넘는 자리.
-const FENCE_CARRY = 2.3
-const FENCE_H = 0.16 // 화면 높이 대비
+// 담장 높이 (화면 높이 대비). 담장까지의 거리는 batted.js가 정한다 — 판정 기준이라서.
+const FENCE_H = 0.16
 
 // 화면 왼쪽 아래 구석에 놓이는 필드 상자. 작을수록 눈에 덜 띈다 —
 // 타구는 이 상자와 무관하게 화면 크기로 날아가므로 상자만 줄이면 된다.
@@ -38,10 +36,10 @@ const FIELD_H = 78
 const MARGIN_X = 16
 const MARGIN_Y = 8
 
-// 타구 세로 단위는 화면 높이. 가로 단위는 "가장 멀리 가는 타구가 여기서 멈춘다"에 맞춘다 —
-// 그래서 공은 화면 밖으로 나가지 않는다. 거의 끝까지 잡아 홈런이 화면 반대편에 떨어지게 한다.
-const FLIGHT_FAR_EDGE = 0.98
-const MAX_LANE = 0.06 // 가장 높은 공(가장 멀리 나가는 각도). pitches.js의 LANE_SPREAD 절반
+// 타구 세로 단위는 화면 높이. 가로 단위는 "퍼펙트 타이밍 홈런이 화면 오른쪽 끝에
+// 떨어지도록" 역산한다. 그러면 담장은 자연히 그 앞(화면 80% 근처)에 서고,
+// 담장을 넘긴 공은 화면 오른쪽으로 빠져나간다 — 넘어갔으니까.
+const HOMERUN_LANDING = 0.98
 
 // 공 뒤에 남는 잔상의 길이 (궤적 시간 기준). 점이 아니라 한 줄로 잇는다.
 const TRAIL_MS = 130
@@ -126,15 +124,16 @@ function flightSpace(field, spot, screenW, screenH) {
   // 타격점이 땅에서 떠 있는 높이 — 공은 이만큼 더 떨어져야 땅에 닿고, 거기서 튄다.
   const launchDy = (spot.ground - spot.contact.y) / unitY
   const origin = { x: field.x + spot.contact.x, y: field.y + spot.contact.y }
-  const far = travel(battedFlight(HOMERUN, 0, -MAX_LANE, launchDy))
-  const farX = screenW * FLIGHT_FAR_EDGE
+  // 기준은 퍼펙트 타이밍·평범한 높이의 홈런 하나. 이게 화면 끝에 떨어진다.
+  const best = carry(battedFlight(HOMERUN, 0, 0, launchDy))
+  const unitX = (screenW * HOMERUN_LANDING - origin.x) / best
 
   return {
     origin,
     unitY,
     launchDy,
-    farX,
-    unitX: (farX - origin.x) / far,
+    unitX,
+    fenceX: origin.x + FENCE_CARRY * unitX,
     ground: field.y + spot.ground,
   }
 }
@@ -177,19 +176,18 @@ function drawGround(ctx, field, spot, ui, space) {
   ctx.lineWidth = Math.max(1, ui.k)
   ctx.strokeStyle = DIM
 
-  // 지면 — 타자 발밑부터 공이 멈추는 데까지.
+  // 지면 — 타자 발밑부터 담장까지.
   ctx.beginPath()
   ctx.moveTo(field.x, space.ground)
-  ctx.lineTo(space.farX, space.ground)
+  ctx.lineTo(space.fenceX, space.ground)
   ctx.stroke()
   ctx.stroke()
 
-  // 담장 — 이 선을 넘겨야 홈런.
-  const fenceX = space.origin.x + FENCE_CARRY * space.unitX
+  // 담장 — 이 선을 넘겨야 홈런. 판정에 쓰는 거리 그대로 세운다.
   ctx.setLineDash([3 * ui.k, 4 * ui.k])
   ctx.beginPath()
-  ctx.moveTo(fenceX, space.ground)
-  ctx.lineTo(fenceX, space.ground - FENCE_H * space.unitY)
+  ctx.moveTo(space.fenceX, space.ground)
+  ctx.lineTo(space.fenceX, space.ground - FENCE_H * space.unitY)
   ctx.stroke()
   ctx.stroke()
   ctx.restore()
@@ -356,7 +354,7 @@ function drawVerdict(ctx, field, ui, state, now) {
 }
 
 function subtitle(result, timing, errorMs) {
-  if (result === HOMERUN) return 'PERFECT'
   if (timing === 'take') return '가만히 있었다'
+  if (timing === 'perfect') return 'PERFECT'
   return `${Math.abs(Math.round(errorMs))}ms ${timing === 'early' ? '빠름' : '늦음'}`
 }

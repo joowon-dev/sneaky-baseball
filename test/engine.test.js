@@ -4,6 +4,7 @@ import {
   idle, nextPitchAt, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS,
 } from '../src/game/engine.js'
 import { HOMERUN, HIT, FOUL, WHIFF, WINDOWS } from '../src/game/judge.js'
+import { battedFlight, carry, FENCE_CARRY } from '../src/game/batted.js'
 
 const PITCH = { type: 'fastball', label: '직구', flightMs: 900, breakX: 0, breakY: 0 }
 const T0 = 1_000
@@ -36,6 +37,34 @@ describe('startPitch', () => {
   it('타구가 어떤 높이의 공이었는지 결과에 남긴다', () => {
     const pitching = startPitch(createGame(), { ...PITCH, lane: 0.04 }, T0)
     expect(swing(pitching, pitching.plateAt).lastResult.lane).toBe(0.04)
+  })
+})
+
+describe('담장이 홈런을 가른다', () => {
+  it('담장을 넘긴 타구만 홈런이다', () => {
+    const flight = (offMs) => battedFlight(HIT, offMs, 0)
+    const solid = swingWith(0)
+    const weak = swingWith(60)
+
+    expect(carry(flight(0))).toBeGreaterThan(FENCE_CARRY)
+    expect(solid.lastResult.result).toBe(HOMERUN)
+
+    expect(carry(flight(60))).toBeLessThan(FENCE_CARRY)
+    expect(weak.lastResult.result).toBe(HIT)
+  })
+
+  it('타이밍이 퍼펙트여도 담장을 못 넘으면 안타다', () => {
+    // 낮은 공(lane 양수)은 각도가 깎여 덜 날아간다.
+    const low = startPitch(createGame(), { ...PITCH, lane: 0.06 }, T0)
+    const hit = swing(low, low.plateAt + 30)
+
+    expect(hit.lastResult.timing).toBe('perfect')
+    expect(carry(battedFlight(HIT, 30, 0.06))).toBeLessThan(FENCE_CARRY)
+    expect(hit.lastResult.result).toBe(HIT)
+  })
+
+  it('파울은 담장 쪽으로 가지도 않으니 홈런이 될 수 없다', () => {
+    expect(swingWith(120).lastResult.result).toBe(FOUL)
   })
 })
 
