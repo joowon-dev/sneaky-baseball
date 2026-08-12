@@ -10,7 +10,7 @@ import { battedFlight, battedBall } from '../game/batted.js'
 import { READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, progress } from '../game/engine.js'
 import { HOMERUN, LABELS, WINDOWS } from '../game/judge.js'
 import {
-  drawFigure, batterStance, batterSwing, pitcherWindup, pitcherRelease, catcherCrouch,
+  drawFigure, batterStance, batterSwing, pitcherWindup, pitcherRelease,
 } from './sprites.js'
 
 // 투명한 배경 위 검은 실루엣. 어두운 앱 위에서도 읽히도록 흰 번짐을 깔고 그린다.
@@ -19,15 +19,14 @@ const DIM = 'rgba(16, 16, 19, 0.4)'
 const SOFT = 'rgba(16, 16, 19, 0.6)'
 const HALO = 'rgba(255, 255, 255, 0.92)'
 
-// 필드 좌표는 0..1 비율. x는 왼쪽(포수)에서 오른쪽(외야)으로.
+// 필드 좌표는 0..1 비율. x는 왼쪽(백네트)에서 오른쪽(외야)으로.
 const GROUND_Y = 0.92
-const CATCHER_X = 0.07
+const BACKSTOP_X = 0.07 // 헛친 공이 굴러가 사라지는 자리
 const BATTER_X = 0.19
 const PITCHER_X = 0.87
 const FENCE_X = 0.975
 const BATTER_H = 0.62
 const PITCHER_H = 0.5
-const CATCHER_H = 0.3
 const FENCE_H = 0.3
 
 // 화면 왼쪽 아래 구석에 놓이는 필드 상자. 작을수록 눈에 덜 띈다 —
@@ -40,6 +39,13 @@ const MARGIN_Y = 8
 // 타구 좌표의 단위. 세로는 화면 높이 전체, 가로는 그 일부 — 포물선이 세로로 길어져
 // 화면 안에 아치 하나가 통째로 들어온다.
 const FLIGHT_X_RATIO = 0.55
+
+// 타구를 실제 시간보다 느리게 흘려 보낸다. 궤적은 그대로고 속도만 준다 —
+// 화면을 가로지르는 공을 눈으로 따라갈 수 있게. 1보다 작을수록 느리다.
+const FLIGHT_TIME_SCALE = 0.55
+
+// 공 뒤에 남는 꼬리의 길이 (궤적 시간 기준).
+const TRAIL_MS = 200
 
 const BASE_H = 320 // 이 높이를 기준으로 글자·여백을 비례시킨다
 const PASSED_MS = 280 // 헛스윙한 공이 포수 미트에 닿기까지
@@ -111,7 +117,6 @@ function geometry(field) {
     ground,
     batterH,
     pitcherH,
-    catcherH: field.h * CATCHER_H,
     contact: { x: field.w * (BATTER_X + 0.06), y: ground - batterH * 0.52 },
     release: { x: field.w * (PITCHER_X - 0.06), y: ground - pitcherH * 0.88 },
   }
@@ -174,13 +179,12 @@ function drawContactMark(ctx, spot, ui, state, now) {
 }
 
 function drawPeople(ctx, field, spot, ui, state, now) {
-  // 타자와 포수는 오른쪽(투수)을 본다 — 그래서 좌우 반전.
+  // 타자는 오른쪽(투수)을 본다 — 그래서 좌우 반전.
   const swung = state.phase === RESULT && state.lastResult?.timing !== 'take'
   const recovered = swung && now - state.resultAt > RESULT_MS
   const pose = swung && !recovered ? batterSwing : batterStance
 
   drawFigure(ctx, pose, field.w * BATTER_X, spot.ground, spot.batterH, -1, ui.glow)
-  drawFigure(ctx, catcherCrouch, field.w * CATCHER_X, spot.ground, spot.catcherH, -1, ui.glow)
 
   const throwing = state.phase === PITCHING
   const pitcher = throwing ? pitcherRelease : pitcherWindup
@@ -230,10 +234,13 @@ function drawFlight(ctx, field, spot, ui, screenH, state, now) {
   const unitY = screenH
   const unitX = screenH * FLIGHT_X_RATIO
   const floor = field.y + spot.ground - ui.ballR
+  // 궤적 상의 시각. 실제로 흐른 시간보다 느리게 간다.
+  const flightAge = age * FLIGHT_TIME_SCALE
 
-  // 지나온 자리를 옅게 남겨 궤적이 보이게 한다.
-  for (let back = 280; back >= 0; back -= 35) {
-    const at = battedBall(flight, age - back)
+  // 지나온 자리를 옅게 남겨 궤적이 보이게 한다. back은 궤적 시간 기준 —
+  // 가장 긴 홈런도 (lifeMs + TRAIL_MS) / FLIGHT_TIME_SCALE 안에 끝나야 잘리지 않는다.
+  for (let back = TRAIL_MS; back >= 0; back -= 35) {
+    const at = battedBall(flight, flightAge - back)
     if (!at) continue
     const x = origin.x + at.dx * unitX
     const y = Math.min(floor, origin.y - at.dy * unitY)
@@ -241,10 +248,11 @@ function drawFlight(ctx, field, spot, ui, screenH, state, now) {
   }
 }
 
+/** 헛친 공은 타자 뒤로 빠져 사라진다. */
 function drawPassedBall(ctx, field, spot, ui, age) {
   if (age > PASSED_MS) return
   const t = age / PASSED_MS
-  const x = spot.contact.x + (field.w * CATCHER_X - spot.contact.x) * t
+  const x = spot.contact.x + (field.w * BACKSTOP_X - spot.contact.x) * t
   ctx.save()
   ctx.translate(field.x, field.y)
   ball(ctx, x, spot.contact.y + t * ui.tick * 0.6, ui.ballR, ui, 1 - t * 0.5)
