@@ -22,7 +22,24 @@ private enum Key {
 private let holdPollInterval: TimeInterval = 1.0 / 30.0
 
 private let recordKey = "bestMeters"
+private let batterKitKey = "batterKit"
+private let pitcherKitKey = "pitcherKit"
 private let webScheme = "sneaky"
+
+/// 메뉴에 세울 구단 목록. src/render/teams.js 의 id·name 과 같아야 한다 —
+/// 셸은 게임 코드를 읽지 않으므로 여기 한 벌을 따로 둔다.
+private let teams: [(id: String, name: String)] = [
+    ("kia", "KIA 타이거즈"),
+    ("samsung", "삼성 라이온즈"),
+    ("lg", "LG 트윈스"),
+    ("doosan", "두산 베어스"),
+    ("kt", "kt wiz"),
+    ("ssg", "SSG 랜더스"),
+    ("lotte", "롯데 자이언츠"),
+    ("hanwha", "한화 이글스"),
+    ("nc", "NC 다이노스"),
+    ("kiwoom", "키움 히어로즈"),
+]
 
 // MARK: - 번들 안의 웹 파일을 넘겨주는 핸들러
 
@@ -82,6 +99,22 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var bestMeters: Int {
         get { UserDefaults.standard.integer(forKey: recordKey) }
         set { UserDefaults.standard.set(newValue, forKey: recordKey) }
+    }
+
+    /// 'lg-home' 같은 키. 없으면 유니폼 없음(검은 실루엣).
+    private func kit(_ who: String) -> String? {
+        UserDefaults.standard.string(forKey: who == "batter" ? batterKitKey : pitcherKitKey)
+    }
+
+    private func setKit(_ who: String, _ key: String?) {
+        let defaultsKey = who == "batter" ? batterKitKey : pitcherKitKey
+        if let key { UserDefaults.standard.set(key, forKey: defaultsKey) }
+        else { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+
+        // 창이 숨어 있어도 밀어 넣는다 — 다시 띄웠을 때 이미 갈아입고 있어야 한다.
+        let literal = key.map { "'\($0)'" } ?? "null"
+        webView.evaluateJavaScript("window.__sneakyKit && window.__sneakyKit('\(who)', \(literal))")
+        refreshMenu()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -147,15 +180,19 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
     /// 렌더러가 기대하는 window.sneaky 를 그대로 만들어 준다 (Electron preload 와 같은 모양).
     private func bridgeScript() -> String {
-        """
+        let batter = kit("batter").map { "'\($0)'" } ?? "null"
+        let pitcher = kit("pitcher").map { "'\($0)'" } ?? "null"
+        return """
         window.sneaky = {
           keyHint: '⌥ 누르고 SPACE',
+          kits: { batter: \(batter), pitcher: \(pitcher) },
           getRecord: () => Promise.resolve({ bestMeters: \(bestMeters) }),
           saveRecord: (record) => window.webkit.messageHandlers.sneaky.postMessage({
             type: 'record', bestMeters: record && record.bestMeters,
           }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
+          onKit: (handler) => { window.__sneakyKit = handler },
         }
         // 웹뷰는 콘솔이 안 보인다. 오류만이라도 셸의 stderr 로 흘려보낸다.
         window.addEventListener('error', (e) => window.webkit.messageHandlers.sneaky.postMessage({
@@ -182,6 +219,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         menu.addItem(disabled("스윙  ⌥Space"))
         menu.addItem(.separator())
 
+        menu.addItem(kitMenu(title: "타자 팀", who: "batter"))
+        menu.addItem(kitMenu(title: "투수 팀", who: "pitcher"))
+        menu.addItem(.separator())
+
         let toggle = NSMenuItem(title: "숨기기 / 보이기", action: #selector(toggleWindow), keyEquivalent: "b")
         toggle.keyEquivalentModifierMask = [.command, .shift]
         toggle.target = self
@@ -197,6 +238,67 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         return item
+    }
+
+    /// 구단 10칸 + 홈·원정 라디오. 고른 팀이 없으면 홈·원정은 회색으로 죽인다.
+    private func kitMenu(title: String, who: String) -> NSMenuItem {
+        let current = kit(who)
+        let parts = current?.split(separator: "-").map(String.init)
+        let teamId = parts?.first
+        let side = parts?.count == 2 ? parts![1] : "home"
+
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+
+        let none = NSMenuItem(title: "유니폼 없음", action: #selector(pickTeam(_:)), keyEquivalent: "")
+        none.target = self
+        none.representedObject = [who, ""]
+        none.state = current == nil ? .on : .off
+        submenu.addItem(none)
+        submenu.addItem(.separator())
+
+        for team in teams {
+            let item = NSMenuItem(title: team.name, action: #selector(pickTeam(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = [who, team.id]
+            item.state = team.id == teamId ? .on : .off
+            submenu.addItem(item)
+        }
+        submenu.addItem(.separator())
+
+        for (value, label) in [("home", "홈"), ("away", "원정")] {
+            let item = NSMenuItem(title: label, action: #selector(pickSide(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = [who, value]
+            item.state = value == side ? .on : .off
+            item.isEnabled = current != nil
+            submenu.addItem(item)
+        }
+
+        let root = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        root.submenu = submenu
+        return root
+    }
+
+    /// 팀만 바꾸고 홈·원정은 지금 고른 쪽을 유지한다.
+    @objc private func pickTeam(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? [String], pair.count == 2 else { return }
+        let (who, teamId) = (pair[0], pair[1])
+        if teamId.isEmpty {
+            setKit(who, nil)
+            return
+        }
+        let parts = kit(who)?.split(separator: "-").map(String.init)
+        let side = parts?.count == 2 ? parts![1] : "home"
+        setKit(who, "\(teamId)-\(side)")
+    }
+
+    /// 홈·원정만 바꾼다. 팀을 안 골랐으면 아무 일도 없다.
+    @objc private func pickSide(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? [String], pair.count == 2,
+              let teamId = kit(pair[0])?.split(separator: "-").first.map(String.init)
+        else { return }
+        setKit(pair[0], "\(teamId)-\(pair[1])")
     }
 
     // MARK: 입력
