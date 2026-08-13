@@ -36,7 +36,23 @@ sealed class OverlayContext : ApplicationContext
         tray.Visible = true;
         tray.ContextMenuStrip = BuildMenu();
         overlay.RecordChanged += _ => tray.ContextMenuStrip = BuildMenu();
+        overlay.KitChanged += () => tray.ContextMenuStrip = BuildMenu();
     }
+
+    /// <summary>메뉴에 세울 구단 목록. src/render/teams.js 의 id·name 과 같아야 한다.</summary>
+    private static readonly (string Id, string Name)[] Teams =
+    {
+        ("kia", "KIA 타이거즈"),
+        ("samsung", "삼성 라이온즈"),
+        ("lg", "LG 트윈스"),
+        ("doosan", "두산 베어스"),
+        ("kt", "kt wiz"),
+        ("ssg", "SSG 랜더스"),
+        ("lotte", "롯데 자이언츠"),
+        ("hanwha", "한화 이글스"),
+        ("nc", "NC 다이노스"),
+        ("kiwoom", "키움 히어로즈"),
+    };
 
     private static Icon LoadIcon()
     {
@@ -51,9 +67,44 @@ sealed class OverlayContext : ApplicationContext
         menu.Items.Add(new ToolStripMenuItem("Alt 를 누르고 있는 동안 투구") { Enabled = false });
         menu.Items.Add(new ToolStripMenuItem("스윙  Alt+Space") { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(KitMenu("타자 팀", "batter"));
+        menu.Items.Add(KitMenu("투수 팀", "pitcher"));
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("숨기기 / 보이기  Ctrl+Shift+B", null, (_, _) => overlay.ToggleVisible()));
         menu.Items.Add(new ToolStripMenuItem("종료", null, (_, _) => Quit()));
         return menu;
+    }
+
+    /// <summary>구단 10칸 + 홈·원정 라디오. 고른 팀이 없으면 홈·원정은 죽인다.</summary>
+    private ToolStripMenuItem KitMenu(string title, string who)
+    {
+        var current = overlay.KitOf(who);
+        var parts = current?.Split('-');
+        var teamId = parts is { Length: 2 } ? parts[0] : null;
+        var side = parts is { Length: 2 } ? parts[1] : "home";
+
+        var root = new ToolStripMenuItem(title);
+        root.DropDownItems.Add(new ToolStripMenuItem("유니폼 없음", null,
+            (_, _) => overlay.SetKit(who, null)) { Checked = current is null });
+        root.DropDownItems.Add(new ToolStripSeparator());
+
+        foreach (var (id, name) in Teams)
+        {
+            root.DropDownItems.Add(new ToolStripMenuItem(name, null,
+                (_, _) => overlay.SetKit(who, $"{id}-{side}")) { Checked = id == teamId });
+        }
+        root.DropDownItems.Add(new ToolStripSeparator());
+
+        foreach (var (value, label) in new[] { ("home", "홈"), ("away", "원정") })
+        {
+            root.DropDownItems.Add(new ToolStripMenuItem(label, null,
+                (_, _) => overlay.SetKit(who, $"{teamId}-{value}"))
+            {
+                Checked = value == side,
+                Enabled = current is not null,
+            });
+        }
+        return root;
     }
 
     private void Quit()
@@ -105,9 +156,28 @@ sealed class Overlay : Form
     public int BestMeters { get; private set; }
     public event Action<int>? RecordChanged;
 
+    /// <summary>'lg-home' 같은 키. null 이면 유니폼 없음(검은 실루엣).</summary>
+    public string? BatterKit { get; private set; }
+    public string? PitcherKit { get; private set; }
+    public event Action? KitChanged;
+
+    public string? KitOf(string who) => who == "batter" ? BatterKit : PitcherKit;
+
+    public void SetKit(string who, string? key)
+    {
+        if (who == "batter") BatterKit = key; else PitcherKit = key;
+        WriteState();
+
+        // Send 는 숨어 있을 때 삼켜 버린다. 유니폼은 숨긴 채로도 바꿀 수 있어야 하므로
+        // 보이는지와 무관하게 밀어 넣는다 — 다시 띄웠을 때 이미 갈아입고 있다.
+        var literal = key is null ? "null" : $"'{key}'";
+        if (ready) _ = web.ExecuteScriptAsync($"window.__sneakyKit && window.__sneakyKit('{who}', {literal})");
+        KitChanged?.Invoke();
+    }
+
     public Overlay()
     {
-        BestMeters = ReadRecord();
+        ReadState();
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -196,17 +266,24 @@ sealed class Overlay : Form
     }
 
     /// <summary>렌더러가 기대하는 window.sneaky. mac 셸과 같은 모양이다.</summary>
-    private string BridgeScript() => $$"""
+    private string BridgeScript()
+    {
+        var batter = BatterKit is null ? "null" : $"'{BatterKit}'";
+        var pitcher = PitcherKit is null ? "null" : $"'{PitcherKit}'";
+        return $$"""
         window.sneaky = {
           keyHint: 'Alt 누르고 Space',
+          kits: { batter: {{batter}}, pitcher: {{pitcher}} },
           getRecord: () => Promise.resolve({ bestMeters: {{BestMeters}} }),
           saveRecord: (record) => window.chrome.webview.postMessage({
             type: 'record', bestMeters: record && record.bestMeters,
           }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
+          onKit: (handler) => { window.__sneakyKit = handler },
         }
         """;
+    }
 
     private void Send(string script)
     {
@@ -250,7 +327,7 @@ sealed class Overlay : Form
             if (meters <= BestMeters) return;
 
             BestMeters = meters;
-            WriteRecord(meters);
+            WriteState();
             RecordChanged?.Invoke(meters);
         }
         catch
@@ -259,22 +336,29 @@ sealed class Overlay : Form
         }
     }
 
-    private int ReadRecord()
+    private void ReadState()
     {
         try
         {
-            var json = JsonDocument.Parse(File.ReadAllText(statePath));
-            return json.RootElement.GetProperty("bestMeters").GetInt32();
+            var json = JsonDocument.Parse(File.ReadAllText(statePath)).RootElement;
+            BestMeters = json.TryGetProperty("bestMeters", out var m) ? m.GetInt32() : 0;
+            BatterKit = json.TryGetProperty("batterKit", out var b) ? b.GetString() : null;
+            PitcherKit = json.TryGetProperty("pitcherKit", out var p) ? p.GetString() : null;
         }
-        catch { return 0; }
+        catch { BestMeters = 0; }
     }
 
-    private void WriteRecord(int meters)
+    private void WriteState()
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
-            File.WriteAllText(statePath, JsonSerializer.Serialize(new { bestMeters = meters }));
+            File.WriteAllText(statePath, JsonSerializer.Serialize(new
+            {
+                bestMeters = BestMeters,
+                batterKit = BatterKit,
+                pitcherKit = PitcherKit,
+            }));
         }
         catch { }
     }
