@@ -17,6 +17,9 @@
 - **배치**: 선수·지면·담장·투구는 화면 왼쪽 아래 구석의 작은 필드 상자(`draw.js`의
   `FIELD_W`×`FIELD_H`) 안에만. **맞은 공만** 상자를 벗어나 화면 좌표로 날아간다.
 - **아트**: 배경 없는 검은 실루엣. 어두운 앱 위에서도 읽히도록 흰 글로우를 깔고 그린다.
+  **상의와 모자 자리에만** KBO 구단 유니폼이 얹힌다 — 색이 아니라 6×9 격자 픽셀 무늬라
+  핀스트라이프·옆구리 패널·소매 트림이 8×14px 안에 들어간다(`teams.js`). 로고는 안 쓰고
+  가슴 글씨 자리는 색 띠 한 줄로만 표현한다. 기본값은 유니폼 없음(그냥 실루엣).
 - **조작**: **`⌥`(Option)을 누르고 있는 동안만** 투수가 던지고, 떼면 즉시 대기.
   스윙은 `⌥Space`. 오버레이는 포커스를 받지 않아 일반 키 이벤트가 오지 않으므로
   스윙은 전역 단축키(맥 Carbon 핫키 / 윈도우 RegisterHotKey), ⌥ 눌림 여부는 30Hz로
@@ -51,6 +54,10 @@
   (`nextPitchAt` = max(글씨 사라지는 시각, 공 멈추는 시각) + 와인드업).
 - **단축키**: `Cmd/Ctrl+Shift+B` 즉시 숨김/복귀. 숨어 있는 동안엔 `⌥Space` 등록을 풀어
   다른 앱에 돌려준다.
+- **유니폼**: 트레이 `⚾` 메뉴의 「타자 팀 ▸」「투수 팀 ▸」 서브메뉴에서 10개 구단 ×
+  홈·원정을 고른다. 타자와 투수는 독립적이고, 고른 값은 셸이 저장한다(맥 `UserDefaults`,
+  윈도우 `state.json`). 브라우저로 열었을 땐 메뉴가 없어 `?batter=lg-home&pitcher=kia-away`
+  쿼리 파라미터로만 확인한다.
 
 ## 실행
 ```
@@ -65,15 +72,18 @@ npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ic
 ## 구조
 - `src/game/` — 순수 모듈. Electron·Canvas를 모른다. 시간은 항상 인자(`now`)로 받는다.
   - `pitches.js` 구종·궤적·난이도 / `judge.js` 판정 / `batted.js` 타구 / `engine.js` 상태 전이
-- `src/render/` — `sprites.js` 실루엣 포즈, `draw.js` 프레임 렌더
+- `src/render/` — `sprites.js` 실루엣 포즈·유니폼 덧그리기, `draw.js` 프레임 렌더,
+  `teams.js` 10구단 20벌 데이터(순수), `kit-bitmap.js` 격자 → RGBA(순수)
 - `src/renderer/` — 루프·입력. `window.sneaky` 가 있으면 앱, 없으면 브라우저로 친다.
 - `mac/` — Swift 셸 (창·핫키·트레이·저장) + `build.sh` / `windows/` — 같은 일을 하는 .NET 셸
 - `scripts/make-icons.mjs` — 아이콘을 코드로 그린다. 의존성 없음.
-- `test/` — `src/game/`만 테스트한다. 렌더링과 창 동작(클릭 통과·항상 위·전역 키)은 수동 확인.
+- `test/` — 순수 모듈만 테스트한다(`src/game/` 전부와 `src/render/teams.js`·`kit-bitmap.js`).
+  렌더링과 창 동작(클릭 통과·항상 위·전역 키)은 수동 확인.
 
 설계 문서:
 - `docs/superpowers/specs/2026-08-12-sneaky-baseball-design.md` (최초 설계)
 - `docs/superpowers/specs/2026-08-12-overlay-mode-design.md` (오버레이 전환)
+- `docs/superpowers/specs/2026-08-13-kbo-uniforms-design.md` (구단 유니폼)
 
 ## 배포
 - 태그(`v*`)를 밀면 CI가 맥 zip · 윈도우 zip 을 만들어 릴리스에 붙인다.
