@@ -49,6 +49,9 @@ const OUTCOME_FADE = 350
 
 const BASE_H = 320 // 이 높이를 기준으로 글자·여백을 비례시킨다
 
+// 유니폼을 안 고른 상태. 매 프레임 새 객체를 만들지 않으려고 하나를 돌려 쓴다.
+const NO_KITS = { batter: null, pitcher: null }
+
 // 안 친 공은 타격점(진행률 1)에 멈추는 게 아니라 그대로 뒤로 빠진다.
 // 이 진행률에서 백네트에 닿아 사라진다.
 const PASSED_TRAVEL = 1.35
@@ -84,7 +87,7 @@ function layout(width, height) {
   return { x: MARGIN_X, y: height - MARGIN_Y - h, w, h }
 }
 
-export function draw(ctx, width, height, state, now) {
+export function draw(ctx, width, height, state, now, kits = NO_KITS) {
   ctx.clearRect(0, 0, width, height)
 
   const field = layout(width, height)
@@ -102,7 +105,7 @@ export function draw(ctx, width, height, state, now) {
 
   drawScore(ctx, field, ui, state)
   drawContactMark(ctx, spot, ui, state, now)
-  drawPeople(ctx, field, spot, ui, state, now)
+  drawPeople(ctx, field, spot, ui, state, now, kits)
 
   // 안 친 공은 결과가 난 뒤에도 계속 날아가 뒤로 빠진다.
   const missed = state.phase === RESULT && state.lastResult?.result === WHIFF
@@ -215,17 +218,17 @@ function drawContactMark(ctx, spot, ui, state, now) {
   ctx.restore()
 }
 
-function drawPeople(ctx, field, spot, ui, state, now) {
+function drawPeople(ctx, field, spot, ui, state, now, kits) {
   // 타자는 오른쪽(투수)을 본다 — 그래서 좌우 반전.
   const swung = state.phase === RESULT && state.lastResult?.timing !== 'take'
   const recovered = swung && now - state.resultAt > RESULT_MS
   const pose = swung && !recovered ? batterSwing : batterStance
 
-  drawFigure(ctx, pose, field.w * BATTER_X, spot.ground, spot.batterH, -1, ui.glow)
+  drawFigure(ctx, pose, field.w * BATTER_X, spot.ground, spot.batterH, -1, ui.glow, kits.batter)
 
   const throwing = state.phase === PITCHING
   const pitcher = throwing ? pitcherRelease : pitcherWindup
-  drawFigure(ctx, pitcher, field.w * PITCHER_X, spot.ground, spot.pitcherH, 1, ui.glow)
+  drawFigure(ctx, pitcher, field.w * PITCHER_X, spot.ground, spot.pitcherH, 1, ui.glow, kits.pitcher)
 }
 
 function ball(ctx, x, y, r, ui, alpha = 1) {

@@ -1,6 +1,7 @@
 import { nextPitch } from '../game/pitches.js'
 import { createGame, startPitch, swing, tick, settle, idle, nextPitchAt, READY } from '../game/engine.js'
 import { draw, setKeyHint } from '../render/draw.js'
+import { kitOf } from '../render/teams.js'
 
 const RECORD_KEY = 'sneaky-baseball:record'
 
@@ -12,6 +13,13 @@ let size = { w: 0, h: 0 }
 let savedBest = 0 // 저장해 둔 최고 비거리(m)
 // ⌥을 누르고 있는 동안만 투수가 던진다. 브라우저로 열었을 땐 늘 켜져 있다.
 let holding = !window.sneaky
+// 타자·투수 유니폼. 안 고르면 예전처럼 검은 실루엣이다.
+let kits = { batter: null, pitcher: null }
+
+function setKit(who, key) {
+  if (who !== 'batter' && who !== 'pitcher') return
+  kits = { ...kits, [who]: kitOf(key) }
+}
 
 function resize() {
   const dpr = window.devicePixelRatio || 1
@@ -51,7 +59,7 @@ function frame() {
   const due = !state.lastResult || now >= nextPitchAt(state)
   if (holding && state.phase === READY && due) pitch(now)
 
-  draw(ctx, size.w, size.h, state, now)
+  draw(ctx, size.w, size.h, state, now, kits)
   requestAnimationFrame(frame)
 }
 
@@ -87,6 +95,17 @@ if (window.sneaky) {
   setKeyHint(window.sneaky.keyHint ?? '⌥ 누르고 SPACE')
   window.sneaky.onSwing(press)
   window.sneaky.onHold(setHolding)
+
+  // 유니폼은 트레이 메뉴에서 고른다. 처음 값은 셸이 들고 있다가 브리지에 실어 준다.
+  setKit('batter', window.sneaky.kits?.batter)
+  setKit('pitcher', window.sneaky.kits?.pitcher)
+  window.sneaky.onKit?.(setKit)
+} else {
+  // 브라우저에는 트레이 메뉴가 없다. 개발 중 확인용으로 쿼리 파라미터만 읽는다.
+  // 예: index.html?batter=lg-home&pitcher=kia-away
+  const params = new URLSearchParams(location.search)
+  setKit('batter', params.get('batter'))
+  setKit('pitcher', params.get('pitcher'))
 }
 
 // 브라우저에서 index.html만 열었을 때의 경로.
