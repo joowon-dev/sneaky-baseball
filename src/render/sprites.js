@@ -4,12 +4,16 @@
 // 몸통 뼈대와 머리 위치를 밖에서도 알아야 해서 같이 내준다. torsoBone 과 head 의 값은
 // silhouette 안에서 실제로 그리는 값과 같아야 한다. 어긋나면 무늬가 몸에서 떠 보인다.
 
+import { kitRGBA } from './kit-bitmap.js'
+import { GRID_W, GRID_H } from './teams.js'
+
 /**
  * 포즈를 (x, y) 지점에 height 픽셀 크기로 그린다. flip=-1이면 좌우 반전.
  * glow가 켜져 있으면 흰 번짐을 먼저 깔아 어두운 배경 위에서도 실루엣이 읽히게 한다.
  * 그림자 번짐은 변환 행렬을 타지 않으므로 크기와 무관하게 일정한 두께가 된다.
+ * kit이 있으면 상의와 모자를 덧그린다 — 없으면 예전 그대로 검은 실루엣이다.
  */
-export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0) {
+export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0, kit = null) {
   ctx.save()
   ctx.translate(x, y)
   ctx.scale(height * flip, height)
@@ -26,6 +30,11 @@ export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0) {
   }
 
   pose.silhouette(ctx)
+  // 유니폼은 실루엣 위에 덧그린다 — 번짐은 위에서 이미 깔렸으므로 무늬도 그 안에 들어앉는다.
+  if (kit) {
+    drawJersey(ctx, pose, kit)
+    drawCap(ctx, pose, kit)
+  }
   ctx.restore()
 }
 
@@ -98,4 +107,79 @@ export const pitcherRelease = {
   },
   torsoBone: [0.02, -0.68, -0.02, -0.4, 0.17],
   head: [-0.05, -0.8, 0.11],
+}
+
+// 구운 유니폼 캔버스를 키트별로 재활용한다. 20벌 × 6×9 픽셀이라 무시할 크기다.
+const jerseyCache = new Map()
+
+function jerseyCanvas(kit) {
+  let canvas = jerseyCache.get(kit)
+  if (canvas) return canvas
+
+  canvas = document.createElement('canvas')
+  canvas.width = GRID_W
+  canvas.height = GRID_H
+  canvas.getContext('2d').putImageData(new ImageData(kitRGBA(kit), GRID_W, GRID_H), 0, 0)
+
+  jerseyCache.set(kit, canvas)
+  return canvas
+}
+
+/**
+ * 둥근 끝을 가진 선(lineCap: round)과 같은 모양의 채울 수 있는 경로.
+ * 몸통은 선으로 그려지는데 클립은 채우기 경로만 받으므로, 같은 모양을 직접 만든다.
+ */
+function capsulePath(ctx, ax, ay, bx, by, w) {
+  const r = w / 2
+  const angle = Math.atan2(by - ay, bx - ax)
+  ctx.beginPath()
+  ctx.arc(ax, ay, r, angle + Math.PI / 2, angle - Math.PI / 2)
+  ctx.arc(bx, by, r, angle - Math.PI / 2, angle + Math.PI / 2)
+  ctx.closePath()
+}
+
+/**
+ * 상의. 몸통 캡슐로 클립을 잡고 그 안을 무늬로 채운다 —
+ * 네모난 비트맵을 그냥 얹으면 어깨가 각지는데, 클립을 잡으면 둥근 윤곽이 남는다.
+ */
+function drawJersey(ctx, pose, kit) {
+  const [ax, ay, bx, by, w] = pose.torsoBone
+  const r = w / 2
+
+  ctx.save()
+  capsulePath(ctx, ax, ay, bx, by, w)
+  ctx.clip()
+
+  // 보간을 끄면 확대해도 칸이 또렷한 네모로 남는다 — 이게 픽셀로 보이는 이유다.
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(
+    jerseyCanvas(kit),
+    Math.min(ax, bx) - r,
+    Math.min(ay, by) - r,
+    Math.abs(bx - ax) + w,
+    Math.abs(by - ay) + w,
+  )
+  ctx.restore()
+}
+
+/**
+ * 모자. 머리 위 절반을 크라운이 덮고, 챙은 로컬 -x 로 뻗는다 —
+ * 타자는 flip=-1, 투수는 flip=1이라 양쪽 다 -x 가 바라보는 방향이다.
+ */
+function drawCap(ctx, pose, kit) {
+  const [hx, hy, r] = pose.head
+
+  ctx.save()
+  // 머리보다 살짝 작게 그려 실루엣 경계에 검은 테두리가 한 줄 남게 한다.
+  ctx.fillStyle = kit.cap.crown
+  ctx.beginPath()
+  ctx.arc(hx, hy, r * 0.94, Math.PI, Math.PI * 2)
+  ctx.closePath()
+  ctx.fill()
+
+  ctx.fillStyle = kit.cap.bill
+  ctx.beginPath()
+  ctx.ellipse(hx - r * 0.55, hy - r * 0.12, r * 0.95, r * 0.22, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
 }
