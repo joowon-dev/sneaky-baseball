@@ -181,10 +181,8 @@ function drawJersey(ctx, pose, kit) {
 
 // 덧그리는 선은 실루엣보다 얇게 — 가장자리에 검은 테두리를 남겨야 몸에서 안 뜬다.
 const TRIM = 0.72
-// 핀스트라이프. 몸통이 8px뿐이라 줄은 1px가 최소이고, 그 이상 가늘게는 못 간다.
-// 굵기를 못 줄이면 개수를 줄여 간격을 벌리는 수밖에 없다 — 셋이면 1:1이라 굵어 보인다.
-const STRIPE_N = 2
-const STRIPE_W = 0.021
+// 핀스트라이프 줄 수. 몸통이 8px뿐이라 1px 줄 셋이면 사이가 3px씩 벌어진다.
+const STRIPE_N = 3
 // 긴바지라 발목까지 내려온다. 끝에 남긴 검정이 스파이크가 된다.
 const PANTS_FRAC = 0.86
 // 반팔이라 윗팔을 다 덮지는 않는다.
@@ -210,19 +208,24 @@ function drawStripes(ctx, pose, kit) {
   ctx.save()
   capsulePath(ctx, ax, ay, bx, by, w)
   ctx.clip()
-  ctx.strokeStyle = kit.stripe
-  ctx.lineWidth = STRIPE_W
-  ctx.lineCap = 'butt'
 
+  // 단위 공간에서 그으면 선이 픽셀 격자에 안 맞아 어떤 줄은 1px, 어떤 줄은 2px가 된다.
+  // 클립은 이미 잡혔으니 변환만 풀고 장치 픽셀에 딱 맞춰 칠한다.
+  const m = ctx.getTransform()
+  const at = (ux, uy) => ({ x: m.a * ux + m.c * uy + m.e, y: m.b * ux + m.d * uy + m.f })
   const midX = (ax + bx) / 2
-  const top = Math.min(ay, by) - w
-  const bottom = Math.max(ay, by) + w
+  const l = at(midX - w / 2, 0).x
+  const r = at(midX + w / 2, 0).x
+  const lo = Math.min(l, r)
+  const span = Math.abs(r - l)
+  const top = at(0, Math.min(ay, by) - w).y
+  const bottom = at(0, Math.max(ay, by) + w).y
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = kit.stripe
   for (let i = 1; i <= STRIPE_N; i += 1) {
-    const x = midX + (i / (STRIPE_N + 1) - 0.5) * w
-    ctx.beginPath()
-    ctx.moveTo(x, top)
-    ctx.lineTo(x, bottom)
-    ctx.stroke()
+    const x = Math.round(lo + (span * i) / (STRIPE_N + 1))
+    ctx.fillRect(x, Math.round(top), 1, Math.round(bottom) - Math.round(top))
   }
   ctx.restore()
 }
