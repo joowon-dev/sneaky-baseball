@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TEAMS, kitOf, GRID_W, GRID_H } from '../src/render/teams.js'
+import { TEAMS, kitOf, GRID_W, GRID_H, PANTS } from '../src/render/teams.js'
 
 const HEX = /^#[0-9A-F]{6}$/
 const kits = () => TEAMS.flatMap((team) => [
@@ -36,13 +36,17 @@ describe('TEAMS', () => {
     }
   })
 
-  it('모자·바지·옷감 색이 유효한 hex 다', () => {
+  it('모자·옷감 색이 유효한 hex 다', () => {
     for (const { label, kit } of kits()) {
       expect(kit.cap.crown, label).toMatch(HEX)
       expect(kit.cap.bill, label).toMatch(HEX)
-      expect(kit.pants, label).toMatch(HEX)
       expect(kit.base, label).toMatch(HEX)
     }
+  })
+
+  it('바지는 구단과 무관하게 흰 긴바지 한 색이다', () => {
+    expect(PANTS).toMatch(HEX)
+    expect(PANTS).toBe('#F2F2F2')
   })
 
   it('옷감 색은 그 격자가 실제로 쓰는 색이다', () => {

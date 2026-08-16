@@ -5,7 +5,7 @@
 // silhouette 안에서 실제로 그리는 값과 같아야 한다. 어긋나면 무늬가 몸에서 떠 보인다.
 
 import { kitRGBA, jerseyBase } from './kit-bitmap.js'
-import { GRID_W, GRID_H } from './teams.js'
+import { GRID_W, GRID_H, PANTS } from './teams.js'
 
 /**
  * 포즈를 (x, y) 지점에 height 픽셀 크기로 그린다. flip=-1이면 좌우 반전.
@@ -32,7 +32,7 @@ export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0, kit = nu
   pose.silhouette(ctx)
   // 유니폼은 실루엣 위에 덧그린다 — 번짐은 위에서 이미 깔렸으므로 무늬도 그 안에 들어앉는다.
   if (kit) {
-    drawPants(ctx, pose, kit)
+    drawPants(ctx, pose)
     drawJersey(ctx, pose, kit)
     drawBelt(ctx, pose)
     drawSleeve(ctx, pose, kit)
@@ -180,8 +180,8 @@ function drawJersey(ctx, pose, kit) {
 
 // 덧그리는 선은 실루엣보다 얇게 — 가장자리에 검은 테두리를 남겨야 몸에서 안 뜬다.
 const TRIM = 0.72
-// 야구 바지는 무릎에서 끊긴다. 나머지 검은 실루엣이 저절로 스타킹과 스파이크로 읽힌다.
-const PANTS_FRAC = 0.45
+// 긴바지라 발목까지 내려온다. 끝에 남긴 검정이 스파이크가 된다.
+const PANTS_FRAC = 0.86
 // 반팔이라 윗팔을 다 덮지는 않는다.
 const SLEEVE_FRAC = 0.5
 
@@ -195,10 +195,10 @@ function partial(ctx, [ax, ay, bx, by, w], frac, color) {
   ctx.stroke()
 }
 
-/** 바지. 엉덩이에서 무릎까지만 덮는다. */
-function drawPants(ctx, pose, kit) {
+/** 흰 긴바지. 엉덩이에서 발목까지 덮는다. */
+function drawPants(ctx, pose) {
   ctx.save()
-  for (const leg of pose.legBones) partial(ctx, leg, PANTS_FRAC, kit.pants)
+  for (const leg of pose.legBones) partial(ctx, leg, PANTS_FRAC, PANTS)
   ctx.restore()
 }
 
