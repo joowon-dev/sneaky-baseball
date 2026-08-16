@@ -36,10 +36,11 @@ describe('TEAMS', () => {
     }
   })
 
-  it('모자 색이 유효한 hex 다', () => {
+  it('모자와 바지 색이 유효한 hex 다', () => {
     for (const { label, kit } of kits()) {
       expect(kit.cap.crown, label).toMatch(HEX)
       expect(kit.cap.bill, label).toMatch(HEX)
+      expect(kit.pants, label).toMatch(HEX)
     }
   })
 

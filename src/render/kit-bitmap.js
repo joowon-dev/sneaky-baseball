@@ -16,6 +16,22 @@ function rgb(hex) {
  * 키트의 상의 격자를 GRID_W × GRID_H RGBA 바이트로. 행 우선이고 전부 불투명하다 —
  * 반투명하면 밑의 검은 실루엣이 비쳐 색이 탁해진다.
  */
+/**
+ * 소매를 칠할 색. 상의 격자에서 제일 많이 쓰인 색이 그 유니폼의 바탕이다 —
+ * 소매는 3px밖에 안 되므로 무늬를 넣지 않고 이 한 색으로 덮는다.
+ */
+export function jerseyBase(kit) {
+  const count = new Map()
+  for (const row of kit.torso) {
+    for (const ch of row) count.set(ch, (count.get(ch) ?? 0) + 1)
+  }
+  let best = null
+  for (const [ch, n] of count) {
+    if (!best || n > best[1]) best = [ch, n]
+  }
+  return kit.colors[best[0]]
+}
+
 export function kitRGBA(kit) {
   const data = new Uint8ClampedArray(GRID_W * GRID_H * 4)
   const palette = new Map()
