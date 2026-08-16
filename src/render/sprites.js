@@ -34,6 +34,7 @@ export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0, kit = nu
   if (kit) {
     drawPants(ctx, pose)
     drawJersey(ctx, pose, kit)
+    if (kit.stripe) drawStripes(ctx, pose, kit)
     drawBelt(ctx, pose)
     drawSleeve(ctx, pose, kit)
     if (pose.helmet) drawHelmet(ctx, pose, kit)
@@ -180,6 +181,10 @@ function drawJersey(ctx, pose, kit) {
 
 // 덧그리는 선은 실루엣보다 얇게 — 가장자리에 검은 테두리를 남겨야 몸에서 안 뜬다.
 const TRIM = 0.72
+// 핀스트라이프. 몸통이 8px뿐이라 줄은 1px가 최소이고, 그 이상 가늘게는 못 간다.
+// 굵기를 못 줄이면 개수를 줄여 간격을 벌리는 수밖에 없다 — 셋이면 1:1이라 굵어 보인다.
+const STRIPE_N = 2
+const STRIPE_W = 0.021
 // 긴바지라 발목까지 내려온다. 끝에 남긴 검정이 스파이크가 된다.
 const PANTS_FRAC = 0.86
 // 반팔이라 윗팔을 다 덮지는 않는다.
@@ -193,6 +198,33 @@ function partial(ctx, [ax, ay, bx, by, w], frac, color) {
   ctx.moveTo(ax, ay)
   ctx.lineTo(ax + (bx - ax) * frac, ay + (by - ay) * frac)
   ctx.stroke()
+}
+
+/**
+ * 핀스트라이프. 격자에 넣으면 6칸 중 3칸이 검정이 되어 굵은 줄무늬가 된다 —
+ * 옷감 무늬는 색 블록보다 고운 단위라 격자 밖에서 가는 선으로 긋는다.
+ */
+function drawStripes(ctx, pose, kit) {
+  const [ax, ay, bx, by, w] = pose.torsoBone
+
+  ctx.save()
+  capsulePath(ctx, ax, ay, bx, by, w)
+  ctx.clip()
+  ctx.strokeStyle = kit.stripe
+  ctx.lineWidth = STRIPE_W
+  ctx.lineCap = 'butt'
+
+  const midX = (ax + bx) / 2
+  const top = Math.min(ay, by) - w
+  const bottom = Math.max(ay, by) + w
+  for (let i = 1; i <= STRIPE_N; i += 1) {
+    const x = midX + (i / (STRIPE_N + 1) - 0.5) * w
+    ctx.beginPath()
+    ctx.moveTo(x, top)
+    ctx.lineTo(x, bottom)
+    ctx.stroke()
+  }
+  ctx.restore()
 }
 
 /** 흰 긴바지. 엉덩이에서 발목까지 덮는다. */

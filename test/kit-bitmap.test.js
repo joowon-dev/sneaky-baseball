@@ -22,12 +22,13 @@ describe('kitRGBA', () => {
     expect(pixel(data, 3, 2)).toEqual([0xE4, 0x02, 0x2D, 255])
   })
 
-  it('LG 홈은 세로 줄무늬가 열마다 번갈아 선다', () => {
+  it('LG 홈 몸통은 격자에서 무지 흰색이다 — 핀스트라이프는 격자 밖에서 긋는다', () => {
     const data = kitRGBA(kitOf('lg-home'))
-    // 3번 줄 'wkwkwk' — 짝수 열 흰색, 홀수 열 검정.
-    expect(pixel(data, 0, 3)).toEqual([0xF2, 0xF2, 0xF2, 255])
-    expect(pixel(data, 1, 3)).toEqual([0x18, 0x18, 0x18, 255])
-    expect(pixel(data, 2, 3)).toEqual([0xF2, 0xF2, 0xF2, 255])
+    for (const col of [0, 1, 2, 3, 4, 5]) {
+      expect(pixel(data, col, 3), `col ${col}`).toEqual([0xF2, 0xF2, 0xF2, 255])
+    }
+    // 어깨 3선은 격자에 남아 있다.
+    expect(pixel(data, 2, 0)).toEqual([0x18, 0x18, 0x18, 255])
   })
 
   it('모든 픽셀이 불투명하다 — 실루엣이 비쳐 보이면 안 된다', () => {
