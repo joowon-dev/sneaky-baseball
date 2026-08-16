@@ -10,6 +10,12 @@
 export const GRID_W = 6
 export const GRID_H = 9
 
+/**
+ * 바지 색. KBO는 홈·원정 가리지 않고 흰 긴바지를 입어서 구단별로 다르지 않다 —
+ * 언젠가 갈리는 팀이 나오면 그때 키트 안으로 옮기면 된다.
+ */
+export const PANTS = '#F2F2F2'
+
 export const TEAMS = [
   {
     id: 'kia',
@@ -30,7 +36,6 @@ export const TEAMS = [
           'rrwwrr',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#C81838', bill: '#C81838' },
       },
       // 검정 바탕에 같은 패널. 홈보다 빨강이 밝다.
@@ -48,7 +53,6 @@ export const TEAMS = [
           'rrkkrr',
         ],
         base: '#282828',   // 소매를 칠할 옷감 색
-        pants: '#282828',
         cap: { crown: '#181818', bill: '#181818' },
       },
     },
@@ -72,7 +76,6 @@ export const TEAMS = [
           'wwwwww',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#0848A8', bill: '#0848A8' },
       },
       away: {
@@ -89,7 +92,6 @@ export const TEAMS = [
           'bbbbbb',
         ],
         base: '#1848A8',   // 소매를 칠할 옷감 색
-        pants: '#1848A8',
         cap: { crown: '#0848A8', bill: '#0848A8' },
       },
     },
@@ -113,7 +115,6 @@ export const TEAMS = [
           'wkwkwk',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#181818', bill: '#181818' },
       },
       away: {
@@ -130,7 +131,6 @@ export const TEAMS = [
           'kkkkkk',
         ],
         base: '#181818',   // 소매를 칠할 옷감 색
-        pants: '#181818',
         cap: { crown: '#181818', bill: '#181818' },
       },
     },
@@ -154,7 +154,6 @@ export const TEAMS = [
           'wwwwww',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#282848', bill: '#282848' },
       },
       away: {
@@ -171,7 +170,6 @@ export const TEAMS = [
           'nnnnnn',
         ],
         base: '#182838',   // 소매를 칠할 옷감 색
-        pants: '#182838',
         cap: { crown: '#282848', bill: '#282848' },
       },
     },
@@ -195,7 +193,6 @@ export const TEAMS = [
           'wwwwww',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#181818', bill: '#181818' },
       },
       away: {
@@ -212,7 +209,6 @@ export const TEAMS = [
           'kkkkkk',
         ],
         base: '#181818',   // 소매를 칠할 옷감 색
-        pants: '#181818',
         cap: { crown: '#181818', bill: '#181818' },
       },
     },
@@ -236,7 +232,6 @@ export const TEAMS = [
           'wwwwww',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#C81828', bill: '#C81828' },
       },
       away: {
@@ -253,7 +248,6 @@ export const TEAMS = [
           'rrrrrr',
         ],
         base: '#C81828',   // 소매를 칠할 옷감 색
-        pants: '#C81828',
         cap: { crown: '#C81828', bill: '#C81828' },
       },
     },
@@ -277,7 +271,6 @@ export const TEAMS = [
           'iiiiii',
         ],
         base: '#E8E8D8',   // 소매를 칠할 옷감 색
-        pants: '#E8E8D8',
         cap: { crown: '#383848', bill: '#383848' },
       },
       away: {
@@ -294,7 +287,6 @@ export const TEAMS = [
           'nnnnnn',
         ],
         base: '#282838',   // 소매를 칠할 옷감 색
-        pants: '#282838',
         cap: { crown: '#383848', bill: '#383848' },
       },
     },
@@ -318,7 +310,6 @@ export const TEAMS = [
           'wwwwww',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#282838', bill: '#282838' },
       },
       // 상품명은 '다크네이비'지만 실측은 거의 검정이다.
@@ -336,7 +327,6 @@ export const TEAMS = [
           'dddddd',
         ],
         base: '#282828',   // 소매를 칠할 옷감 색
-        pants: '#282828',
         cap: { crown: '#282838', bill: '#282838' },
       },
     },
@@ -360,7 +350,6 @@ export const TEAMS = [
           'nwwwwn',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#183858', bill: '#183858' },
       },
       away: {
@@ -377,7 +366,6 @@ export const TEAMS = [
           'snnnns',
         ],
         base: '#183848',   // 소매를 칠할 옷감 색
-        pants: '#183848',
         cap: { crown: '#183858', bill: '#183858' },
       },
     },
@@ -401,7 +389,6 @@ export const TEAMS = [
           'wwwwww',
         ],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        pants: '#F2F2F2',
         cap: { crown: '#481828', bill: '#481828' },
       },
       away: {
@@ -418,7 +405,6 @@ export const TEAMS = [
           'uuuuuu',
         ],
         base: '#582838',   // 소매를 칠할 옷감 색
-        pants: '#582838',
         cap: { crown: '#481828', bill: '#481828' },
       },
     },
