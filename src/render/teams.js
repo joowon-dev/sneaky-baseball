@@ -101,19 +101,21 @@ export const TEAMS = [
     name: 'LG 트윈스',
     kits: {
       // 검정 핀스트라이프 + 어깨 검정 3선. 10구단에서 유일한 세로 줄무늬 홈이다.
+      // 줄무늬는 격자에 넣지 않는다 — 6칸으로 쪼개면 검정이 절반을 먹어 굵어진다.
       home: {
         colors: { w: '#F2F2F2', k: '#181818', r: '#C8102E' },
         torso: [
           'kkkkkk',
-          'wkwkwk',
+          'wwwwww',
           'wrrrrw',
-          'wkwkwk',
-          'wkwkwk',
-          'wkwkwk',
-          'wkwkwk',
-          'wkwkwk',
-          'wkwkwk',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
         ],
+        stripe: '#181818',
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
         cap: { crown: '#181818', bill: '#181818' },
       },
