@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { kitRGBA } from '../src/render/kit-bitmap.js'
+import { kitRGBA, jerseyBase } from '../src/render/kit-bitmap.js'
 import { TEAMS, kitOf, GRID_W, GRID_H } from '../src/render/teams.js'
 
 const pixel = (data, col, row) => {
@@ -43,6 +43,27 @@ describe('kitRGBA', () => {
     for (const team of TEAMS) {
       for (const key of [`${team.id}-home`, `${team.id}-away`]) {
         expect(kitRGBA(kitOf(key)), key).toHaveLength(GRID_W * GRID_H * 4)
+      }
+    }
+  })
+})
+
+describe('jerseyBase', () => {
+  it('격자에서 제일 많이 쓰인 색을 준다', () => {
+    // 두산 홈은 거의 전부 흰색, 원정은 거의 전부 네이비.
+    expect(jerseyBase(kitOf('doosan-home'))).toBe('#F2F2F2')
+    expect(jerseyBase(kitOf('doosan-away'))).toBe('#182838')
+    // 롯데 홈 바탕은 흰색이 아니라 아이보리다.
+    expect(jerseyBase(kitOf('lotte-home'))).toBe('#E8E8D8')
+    // LG 홈은 핀스트라이프라 흰 칸이 검정 칸보다 많다.
+    expect(jerseyBase(kitOf('lg-home'))).toBe('#F2F2F2')
+  })
+
+  it('20벌 모두 그 키트가 실제로 쓰는 색을 준다', () => {
+    for (const team of TEAMS) {
+      for (const key of [`${team.id}-home`, `${team.id}-away`]) {
+        const kit = kitOf(key)
+        expect(Object.values(kit.colors), key).toContain(jerseyBase(kit))
       }
     }
   })
