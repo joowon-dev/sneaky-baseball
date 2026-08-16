@@ -17,19 +17,12 @@ function rgb(hex) {
  * 반투명하면 밑의 검은 실루엣이 비쳐 색이 탁해진다.
  */
 /**
- * 소매를 칠할 색. 상의 격자에서 제일 많이 쓰인 색이 그 유니폼의 바탕이다 —
- * 소매는 3px밖에 안 되므로 무늬를 넣지 않고 이 한 색으로 덮는다.
+ * 소매를 칠할 색. 격자에서 제일 많은 색을 세는 방법도 있었지만 LG 홈처럼
+ * 핀스트라이프에 어깨 줄까지 있으면 검정이 흰색을 이겨 소매가 뒤집힌다 —
+ * 옷감 색은 세는 게 아니라 사진을 보고 정하는 것이라 데이터로 받는다.
  */
 export function jerseyBase(kit) {
-  const count = new Map()
-  for (const row of kit.torso) {
-    for (const ch of row) count.set(ch, (count.get(ch) ?? 0) + 1)
-  }
-  let best = null
-  for (const [ch, n] of count) {
-    if (!best || n > best[1]) best = [ch, n]
-  }
-  return kit.colors[best[0]]
+  return kit.base
 }
 
 export function kitRGBA(kit) {

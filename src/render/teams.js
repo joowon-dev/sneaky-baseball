@@ -15,7 +15,7 @@ export const TEAMS = [
     id: 'kia',
     name: 'KIA 타이거즈',
     kits: {
-      // 흰 바탕에 옆구리 빨강 사선 패널.
+      // 흰 바탕에 옆구리 빨강 패널. 아래로 갈수록 넓어지고 단추 줄만 희게 남는다.
       home: {
         colors: { w: '#F2F2F2', r: '#C80828' },
         torso: [
@@ -24,15 +24,16 @@ export const TEAMS = [
           'wrrrrw',
           'wwwwww',
           'wwwwww',
-          'wwwwwr',
-          'wwwwrr',
-          'wwwrrr',
-          'wwwrrr',
+          'rwwwwr',
+          'rwwwwr',
+          'rrwwrr',
+          'rrwwrr',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#C81838', bill: '#C81838' },
       },
-      // 검정 바탕에 같은 사선. 홈보다 빨강이 밝다.
+      // 검정 바탕에 같은 패널. 홈보다 빨강이 밝다.
       away: {
         colors: { k: '#282828', r: '#E8202C' },
         torso: [
@@ -41,11 +42,12 @@ export const TEAMS = [
           'krrrrk',
           'kkkkkk',
           'kkkkkk',
-          'kkkkkr',
-          'kkkkrr',
-          'kkkrrr',
-          'kkkrrr',
+          'rkkkkr',
+          'rkkkkr',
+          'rrkkrr',
+          'rrkkrr',
         ],
+        base: '#282828',   // 소매를 칠할 옷감 색
         pants: '#282828',
         cap: { crown: '#181818', bill: '#181818' },
       },
@@ -69,6 +71,7 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#0848A8', bill: '#0848A8' },
       },
@@ -85,6 +88,7 @@ export const TEAMS = [
           'bbbbbb',
           'bbbbbb',
         ],
+        base: '#1848A8',   // 소매를 칠할 옷감 색
         pants: '#1848A8',
         cap: { crown: '#0848A8', bill: '#0848A8' },
       },
@@ -94,11 +98,11 @@ export const TEAMS = [
     id: 'lg',
     name: 'LG 트윈스',
     kits: {
-      // 검정 핀스트라이프. 10구단에서 유일한 세로 줄무늬 홈이다.
+      // 검정 핀스트라이프 + 어깨 검정 3선. 10구단에서 유일한 세로 줄무늬 홈이다.
       home: {
         colors: { w: '#F2F2F2', k: '#181818', r: '#C8102E' },
         torso: [
-          'wkwkwk',
+          'kkkkkk',
           'wkwkwk',
           'wrrrrw',
           'wkwkwk',
@@ -108,6 +112,7 @@ export const TEAMS = [
           'wkwkwk',
           'wkwkwk',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#181818', bill: '#181818' },
       },
@@ -124,6 +129,7 @@ export const TEAMS = [
           'kkkkkk',
           'kkkkkk',
         ],
+        base: '#181818',   // 소매를 칠할 옷감 색
         pants: '#181818',
         cap: { crown: '#181818', bill: '#181818' },
       },
@@ -147,6 +153,7 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#282848', bill: '#282848' },
       },
@@ -163,6 +170,7 @@ export const TEAMS = [
           'nnnnnn',
           'nnnnnn',
         ],
+        base: '#182838',   // 소매를 칠할 옷감 색
         pants: '#182838',
         cap: { crown: '#282848', bill: '#282848' },
       },
@@ -186,6 +194,7 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#181818', bill: '#181818' },
       },
@@ -202,6 +211,7 @@ export const TEAMS = [
           'kkkkkk',
           'kkkkkk',
         ],
+        base: '#181818',   // 소매를 칠할 옷감 색
         pants: '#181818',
         cap: { crown: '#181818', bill: '#181818' },
       },
@@ -225,6 +235,7 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#C81828', bill: '#C81828' },
       },
@@ -241,6 +252,7 @@ export const TEAMS = [
           'rrrrrr',
           'rrrrrr',
         ],
+        base: '#C81828',   // 소매를 칠할 옷감 색
         pants: '#C81828',
         cap: { crown: '#C81828', bill: '#C81828' },
       },
@@ -250,11 +262,11 @@ export const TEAMS = [
     id: 'lotte',
     name: '롯데 자이언츠',
     kits: {
-      // 홈이 흰색이 아니라 아이보리다 — 10구단에서 여기뿐이다.
+      // 홈이 흰색이 아니라 아이보리다 — 10구단에서 여기뿐이다. 목·소매에 트림은 없다.
       home: {
-        colors: { i: '#E8E8D8', n: '#282838', r: '#D31145' },
+        colors: { i: '#E8E8D8', r: '#D31145' },
         torso: [
-          'nnnnnn',
+          'iiiiii',
           'iiiiii',
           'irrrri',
           'iiiiii',
@@ -264,6 +276,7 @@ export const TEAMS = [
           'iiiiii',
           'iiiiii',
         ],
+        base: '#E8E8D8',   // 소매를 칠할 옷감 색
         pants: '#E8E8D8',
         cap: { crown: '#383848', bill: '#383848' },
       },
@@ -280,6 +293,7 @@ export const TEAMS = [
           'nnnnnn',
           'nnnnnn',
         ],
+        base: '#282838',   // 소매를 칠할 옷감 색
         pants: '#282838',
         cap: { crown: '#383848', bill: '#383848' },
       },
@@ -303,6 +317,7 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#282838', bill: '#282838' },
       },
@@ -320,6 +335,7 @@ export const TEAMS = [
           'dddddd',
           'dddddd',
         ],
+        base: '#282828',   // 소매를 칠할 옷감 색
         pants: '#282828',
         cap: { crown: '#282838', bill: '#282838' },
       },
@@ -343,6 +359,7 @@ export const TEAMS = [
           'nwwwwn',
           'nwwwwn',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#183858', bill: '#183858' },
       },
@@ -359,6 +376,7 @@ export const TEAMS = [
           'snnnns',
           'snnnns',
         ],
+        base: '#183848',   // 소매를 칠할 옷감 색
         pants: '#183848',
         cap: { crown: '#183858', bill: '#183858' },
       },
@@ -382,6 +400,7 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        base: '#F2F2F2',   // 소매를 칠할 옷감 색
         pants: '#F2F2F2',
         cap: { crown: '#481828', bill: '#481828' },
       },
@@ -398,6 +417,7 @@ export const TEAMS = [
           'uuuuuu',
           'uuuuuu',
         ],
+        base: '#582838',   // 소매를 칠할 옷감 색
         pants: '#582838',
         cap: { crown: '#481828', bill: '#481828' },
       },

@@ -49,13 +49,12 @@ describe('kitRGBA', () => {
 })
 
 describe('jerseyBase', () => {
-  it('격자에서 제일 많이 쓰인 색을 준다', () => {
-    // 두산 홈은 거의 전부 흰색, 원정은 거의 전부 네이비.
+  it('옷감 색을 준다', () => {
     expect(jerseyBase(kitOf('doosan-home'))).toBe('#F2F2F2')
     expect(jerseyBase(kitOf('doosan-away'))).toBe('#182838')
     // 롯데 홈 바탕은 흰색이 아니라 아이보리다.
     expect(jerseyBase(kitOf('lotte-home'))).toBe('#E8E8D8')
-    // LG 홈은 핀스트라이프라 흰 칸이 검정 칸보다 많다.
+    // LG 홈은 검정 칸이 흰 칸보다 많지만(핀스트라이프 + 어깨 3선) 옷감은 흰색이다.
     expect(jerseyBase(kitOf('lg-home'))).toBe('#F2F2F2')
   })
 
