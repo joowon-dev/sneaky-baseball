@@ -183,6 +183,8 @@ function drawJersey(ctx, pose, kit) {
 const TRIM = 0.72
 // 핀스트라이프 줄 수. 몸통이 8px뿐이라 1px 줄 셋이면 사이가 3px씩 벌어진다.
 const STRIPE_N = 3
+// 줄 굵기는 몸통 폭에 비례한다. 게임 크기에서는 1px이고, 크게 그리면 같이 굵어진다.
+const STRIPE_RATIO = 0.07
 // 긴바지라 발목까지 내려온다. 끝에 남긴 검정이 스파이크가 된다.
 const PANTS_FRAC = 0.86
 // 반팔이라 윗팔을 다 덮지는 않는다.
@@ -223,9 +225,10 @@ function drawStripes(ctx, pose, kit) {
 
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.fillStyle = kit.stripe
+  const thick = Math.max(1, Math.round(span * STRIPE_RATIO))
   for (let i = 1; i <= STRIPE_N; i += 1) {
-    const x = Math.round(lo + (span * i) / (STRIPE_N + 1))
-    ctx.fillRect(x, Math.round(top), 1, Math.round(bottom) - Math.round(top))
+    const x = Math.round(lo + (span * i) / (STRIPE_N + 1) - thick / 2)
+    ctx.fillRect(x, Math.round(top), thick, Math.round(bottom) - Math.round(top))
   }
   ctx.restore()
 }
