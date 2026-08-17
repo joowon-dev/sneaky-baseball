@@ -49,11 +49,26 @@ describe('TEAMS', () => {
     expect(PANTS).toBe('#F2F2F2')
   })
 
-  it('핀스트라이프가 있는 벌은 색이 유효하다 — 격자 밖에서 긋는다', () => {
-    const striped = kits().filter(({ kit }) => kit.stripe)
-    // 지금은 LG 홈 한 벌뿐이다. 늘어나면 이 숫자를 고친다.
-    expect(striped.map((s) => s.label)).toEqual(['lg-home'])
-    for (const { label, kit } of striped) expect(kit.stripe, label).toMatch(HEX)
+  it('격자 밖에서 그리는 것들은 색이 유효하다', () => {
+    // 평평한 색면만 격자로 간다. 곡선인 것 — 줄무늬·옆구리 패널·목·소매 트림 — 은
+    // 격자에 넣으면 계단이 지거나 가슴을 가로지르는 띠가 되어 버린다.
+    expect(kits().filter(({ kit }) => kit.stripe).map((s) => s.label)).toEqual(['lg-home'])
+    expect(kits().filter(({ kit }) => kit.panel).map((s) => s.label))
+      .toEqual(['kia-home', 'kia-away', 'nc-home', 'nc-away'])
+
+    for (const { label, kit } of kits()) {
+      if (kit.stripe) expect(kit.stripe, label).toMatch(HEX)
+      if (kit.panel) {
+        expect(kit.panel.color, label).toMatch(HEX)
+        expect(['sash', 'sides'], label).toContain(kit.panel.style)
+      }
+      if (kit.trim) {
+        expect(kit.trim.length, label).toBeGreaterThan(0)
+        for (const c of kit.trim) expect(c, label).toMatch(HEX)
+      }
+      // 목 트림은 트림 색이 있어야 그릴 수 있다.
+      if (kit.collar) expect(kit.trim, label).toBeTruthy()
+    }
   })
 
   it('옷감 색은 그 격자가 실제로 쓰는 색이다', () => {

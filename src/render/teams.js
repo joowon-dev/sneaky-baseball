@@ -30,11 +30,12 @@ export const TEAMS = [
           'wrrrrw',
           'wwwwww',
           'wwwwww',
-          'rwwwwr',
-          'rwwwwr',
-          'rrwwrr',
-          'rrwwrr',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
         ],
+        panel: { color: '#C80828', style: 'sash' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
         cap: { crown: '#C81838', bill: '#C81838' },
       },
@@ -47,11 +48,12 @@ export const TEAMS = [
           'krrrrk',
           'kkkkkk',
           'kkkkkk',
-          'rkkkkr',
-          'rkkkkr',
-          'rrkkrr',
-          'rrkkrr',
+          'kkkkkk',
+          'kkkkkk',
+          'kkkkkk',
+          'kkkkkk',
         ],
+        panel: { color: '#E8202C', style: 'sash' },
         base: '#282828',   // 소매를 칠할 옷감 색
         cap: { crown: '#181818', bill: '#181818' },
       },
@@ -65,7 +67,7 @@ export const TEAMS = [
       home: {
         colors: { w: '#F2F2F2', b: '#1848A8' },
         torso: [
-          'bbbbbb',
+          'wwwwww',
           'wwwwww',
           'wbbbbw',
           'wwwwww',
@@ -75,13 +77,15 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        trim: ['#1848A8'],
+        collar: true,
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
         cap: { crown: '#0848A8', bill: '#0848A8' },
       },
       away: {
         colors: { b: '#1848A8', w: '#F2F2F2' },
         torso: [
-          'wwwwww',
+          'bbbbbb',
           'bbbbbb',
           'bwwwwb',
           'bbbbbb',
@@ -91,6 +95,8 @@ export const TEAMS = [
           'bbbbbb',
           'bbbbbb',
         ],
+        trim: ['#F2F2F2'],
+        collar: true,
         base: '#1848A8',   // 소매를 칠할 옷감 색
         cap: { crown: '#0848A8', bill: '#0848A8' },
       },
@@ -184,7 +190,7 @@ export const TEAMS = [
       home: {
         colors: { w: '#F2F2F2', k: '#181818', r: '#E8202C' },
         torso: [
-          'kkkkkk',
+          'wwwwww',
           'wwwwww',
           'wkkrkw',
           'wwwwww',
@@ -194,13 +200,14 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        trim: ['#181818'],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
         cap: { crown: '#181818', bill: '#181818' },
       },
       away: {
         colors: { k: '#181818', w: '#F2F2F2', r: '#E8202C' },
         torso: [
-          'wwwwww',
+          'kkkkkk',
           'kkkkkk',
           'kwwrwk',
           'kkkkkk',
@@ -210,6 +217,7 @@ export const TEAMS = [
           'kkkkkk',
           'kkkkkk',
         ],
+        trim: ['#F2F2F2'],
         base: '#181818',   // 소매를 칠할 옷감 색
         cap: { crown: '#181818', bill: '#181818' },
       },
@@ -223,7 +231,7 @@ export const TEAMS = [
       home: {
         colors: { w: '#F2F2F2', r: '#C81828', y: '#E8B830' },
         torso: [
-          'rrrrrr',
+          'wwwwww',
           'wwwwww',
           'wrryrw',
           'wwwwww',
@@ -233,13 +241,15 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        trim: ['#C81828'],
+        collar: true,
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
         cap: { crown: '#C81828', bill: '#C81828' },
       },
       away: {
         colors: { r: '#C81828', w: '#F2F2F2', e: '#2E8B57' },
         torso: [
-          'wwwwww',
+          'rrrrrr',
           'rrrrrr',
           'rwwewr',
           'rrrrrr',
@@ -249,6 +259,8 @@ export const TEAMS = [
           'rrrrrr',
           'rrrrrr',
         ],
+        trim: ['#F2F2F2'],
+        collar: true,
         base: '#C81828',   // 소매를 칠할 옷감 색
         cap: { crown: '#C81828', bill: '#C81828' },
       },
@@ -339,34 +351,38 @@ export const TEAMS = [
     kits: {
       // 양 옆구리 패널 + 소매 금색 라인. 옆구리가 양쪽인 건 여기뿐이다.
       home: {
-        colors: { w: '#F2F2F2', n: '#183848', g: '#C8A868' },
+        colors: { w: '#F2F2F2', n: '#183848' },
         torso: [
-          'gggggg',
+          'wwwwww',
           'wwwwww',
           'wnnnnw',
-          'nwwwwn',
-          'nwwwwn',
-          'nwwwwn',
-          'nwwwwn',
-          'nwwwwn',
-          'nwwwwn',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
+          'wwwwww',
         ],
+        panel: { color: '#183848', style: 'sides' },
+        trim: ['#C8A868'],
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
         cap: { crown: '#183858', bill: '#183858' },
       },
       away: {
-        colors: { n: '#183848', g: '#C8A868', s: '#90B8D8' },
+        colors: { n: '#183848', g: '#C8A868' },
         torso: [
-          'gggggg',
+          'nnnnnn',
           'nnnnnn',
           'nggggn',
-          'snnnns',
-          'snnnns',
-          'snnnns',
-          'snnnns',
-          'snnnns',
-          'snnnns',
+          'nnnnnn',
+          'nnnnnn',
+          'nnnnnn',
+          'nnnnnn',
+          'nnnnnn',
+          'nnnnnn',
         ],
+        panel: { color: '#90B8D8', style: 'sides' },
+        trim: ['#C8A868'],
         base: '#183848',   // 소매를 칠할 옷감 색
         cap: { crown: '#183858', bill: '#183858' },
       },
@@ -378,10 +394,10 @@ export const TEAMS = [
     kits: {
       // 보조색이 금색에서 핑크로 바뀌었다. 목·소매에 버건디+핑크 두 줄.
       home: {
-        colors: { w: '#F2F2F2', u: '#582838', p: '#E890B0' },
+        colors: { w: '#F2F2F2', u: '#582838' },
         torso: [
-          'uuuuuu',
-          'pppppp',
+          'wwwwww',
+          'wwwwww',
           'wuuuuw',
           'wwwwww',
           'wwwwww',
@@ -390,14 +406,16 @@ export const TEAMS = [
           'wwwwww',
           'wwwwww',
         ],
+        trim: ['#582838', '#E890B0'],
+        collar: true,
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
         cap: { crown: '#481828', bill: '#481828' },
       },
       away: {
-        colors: { u: '#582838', w: '#F2F2F2', p: '#E890B0' },
+        colors: { u: '#582838', w: '#F2F2F2' },
         torso: [
-          'wwwwww',
-          'pppppp',
+          'uuuuuu',
+          'uuuuuu',
           'uwwwwu',
           'uuuuuu',
           'uuuuuu',
@@ -406,6 +424,8 @@ export const TEAMS = [
           'uuuuuu',
           'uuuuuu',
         ],
+        trim: ['#F2F2F2', '#E890B0'],
+        collar: true,
         base: '#582838',   // 소매를 칠할 옷감 색
         cap: { crown: '#481828', bill: '#481828' },
       },
