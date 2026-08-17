@@ -34,9 +34,12 @@ export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0, kit = nu
   if (kit) {
     drawPants(ctx, pose)
     drawJersey(ctx, pose, kit)
+    if (kit.panel) drawPanel(ctx, pose, kit)
     if (kit.stripe) drawStripes(ctx, pose, kit)
+    if (kit.collar) drawCollar(ctx, pose, kit)
     drawBelt(ctx, pose)
     drawSleeve(ctx, pose, kit)
+    if (kit.trim) drawCuff(ctx, pose, kit)
     if (pose.helmet) drawHelmet(ctx, pose, kit)
     else drawCap(ctx, pose, kit)
   }
@@ -233,6 +236,88 @@ function drawStripes(ctx, pose, kit) {
   ctx.restore()
 }
 
+/** 몸통 상자를 단위 공간으로 풀어둔다 — 곡선 요소들이 다 이 좌표를 쓴다. */
+function torsoBox(pose) {
+  const [ax, ay, bx, by, w] = pose.torsoBone
+  return {
+    cx: (ax + bx) / 2,
+    top: Math.min(ay, by) - w / 2,
+    bottom: Math.max(ay, by) + w / 2,
+    w,
+    neck: { x: ax, y: ay, r: w / 2 },
+  }
+}
+
+/**
+ * 옆구리 패널. 격자로 그리면 계단이 생겨 사선도 곡선도 안 나온다 —
+ * 색면보다 고운 모양이라 클립 안에서 곡선으로 채운다.
+ *   sash  — KIA. 아래 양옆에서 솟아 가운데 단추 줄만 남긴다.
+ *   sides — NC. 양 옆구리에 세로로 붙고 위쪽이 둥글게 끝난다.
+ */
+function drawPanel(ctx, pose, kit) {
+  const { cx, top, bottom, w } = torsoBox(pose)
+  const h = bottom - top
+
+  ctx.save()
+  capsulePath(ctx, ...pose.torsoBone)
+  ctx.clip()
+  ctx.fillStyle = kit.panel.color
+
+  for (const side of [-1, 1]) {
+    const edge = cx + (side * w) / 2
+    ctx.beginPath()
+    if (kit.panel.style === 'sash') {
+      ctx.moveTo(edge, bottom)
+      ctx.lineTo(edge, bottom - h * 0.5)
+      ctx.quadraticCurveTo(cx + side * w * 0.34, bottom - h * 0.22, cx + side * w * 0.1, bottom)
+    } else {
+      ctx.moveTo(edge, bottom)
+      ctx.lineTo(edge, bottom - h * 0.6)
+      ctx.quadraticCurveTo(cx + side * w * 0.36, bottom - h * 0.5, cx + side * w * 0.28, bottom)
+    }
+    ctx.closePath()
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+/** 목 트림. 어깨 곡선을 따라 도는 얇은 호라서 가로 띠로는 절대 안 나온다. */
+function drawCollar(ctx, pose, kit) {
+  const { neck, w } = torsoBox(pose)
+
+  ctx.save()
+  capsulePath(ctx, ...pose.torsoBone)
+  ctx.clip()
+  ctx.lineCap = 'butt'
+  kit.trim.forEach((color, i) => {
+    ctx.strokeStyle = color
+    ctx.lineWidth = w * 0.09
+    ctx.beginPath()
+    ctx.arc(neck.x, neck.y, neck.r * (0.82 - i * 0.22), Math.PI * 1.12, Math.PI * 1.88)
+    ctx.stroke()
+  })
+  ctx.restore()
+}
+
+/** 소매 끝동. 반팔 끝을 한 바퀴 두르는 선이라 소매 색 위에 짧게 얹는다. */
+function drawCuff(ctx, pose, kit) {
+  const [ax, ay, bx, by, w] = pose.sleeveBone
+
+  ctx.save()
+  ctx.lineCap = 'butt'
+  kit.trim.forEach((color, i) => {
+    const end = SLEEVE_FRAC - i * 0.1
+    const start = end - 0.09
+    ctx.strokeStyle = color
+    ctx.lineWidth = w * TRIM
+    ctx.beginPath()
+    ctx.moveTo(ax + (bx - ax) * start, ay + (by - ay) * start)
+    ctx.lineTo(ax + (bx - ax) * end, ay + (by - ay) * end)
+    ctx.stroke()
+  })
+  ctx.restore()
+}
+
 /** 흰 긴바지. 엉덩이에서 발목까지 덮는다. */
 function drawPants(ctx, pose) {
   ctx.save()
@@ -248,11 +333,13 @@ function drawBelt(ctx, pose) {
   const [, , bx, by, w] = pose.torsoBone
 
   ctx.save()
+  // 둥근 끝을 그대로 두면 몸통보다 넓게 삐져나온다.
+  ctx.lineCap = 'butt'
   ctx.strokeStyle = '#101013'
-  ctx.lineWidth = w * 0.2
+  ctx.lineWidth = w * 0.18
   ctx.beginPath()
-  ctx.moveTo(bx - w * 0.46, by + w * 0.5)
-  ctx.lineTo(bx + w * 0.46, by + w * 0.5)
+  ctx.moveTo(bx - w * 0.5, by + w * 0.5)
+  ctx.lineTo(bx + w * 0.5, by + w * 0.5)
   ctx.stroke()
   ctx.restore()
 }
