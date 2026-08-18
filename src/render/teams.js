@@ -1,9 +1,13 @@
 // KBO 10개 구단의 홈·원정 유니폼. Canvas도 셸도 모르는 순수 데이터다.
 //
-// 상의는 가로 6 × 세로 9칸 격자다. 1080 화면에서 몸통이 8×14px이라 이 정도가
-// 들어간다 — 핀스트라이프, 옆구리 사선, 소매 트림 줄까지는 되고 로고는 안 된다.
-// 0번 줄이 어깨, 2번 줄이 가슴 글씨 자리다. 가슴 글씨는 글자 모양이 아니라
-// 그 자리의 색 띠로만 표현한다(상표를 그리지 않는다).
+// 한 벌은 세 조각으로 나뉜다.
+//   1. 격자(`torso`) — 가로 6 × 세로 9칸의 평평한 색면. 옷감 바탕색과 어깨 절개선처럼
+//      네모로 떨어지는 것만 담는다.
+//   2. 곡선(`stripe`·`panel`·`trim`·`collar`) — 격자에 넣으면 계단이 지는 것들.
+//      그리는 쪽에서 몸통 모양으로 클립을 잡고 벡터로 긋는다.
+//   3. 글씨(`mark`·`cap.mark`) — 가슴 워드마크와 모자 글씨. 예전엔 자리만 색 띠로
+//      표시했는데, 띠는 어느 구단이든 똑같이 생겨서 결국 구단을 못 알아봤다.
+//      상표 이미지를 쓰지 않고 텍스트로 찍는다.
 //
 // 색은 기억이 아니라 구단 공식 판매처 상품 사진의 픽셀에서 뽑았다.
 
@@ -16,6 +20,8 @@ export const GRID_H = 9
  */
 export const PANTS = '#F2F2F2'
 
+const FIELD = (ch) => Array(GRID_H).fill(ch.repeat(GRID_W))
+
 export const TEAMS = [
   {
     id: 'kia',
@@ -23,39 +29,21 @@ export const TEAMS = [
     kits: {
       // 흰 바탕에 옆구리 빨강 패널. 아래로 갈수록 넓어지고 단추 줄만 희게 남는다.
       home: {
-        colors: { w: '#F2F2F2', r: '#C80828' },
-        torso: [
-          'wwwwww',
-          'wwwwww',
-          'wrrrrw',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-        ],
+        colors: { w: '#F2F2F2' },
+        torso: FIELD('w'),
         panel: { color: '#C80828', style: 'sash' },
+        mark: { text: 'KIA', color: '#C80828' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#C81838', bill: '#C81838' },
+        cap: { crown: '#C81838', bill: '#C81838', mark: 'K', markColor: '#F2F2F2' },
       },
       // 검정 바탕에 같은 패널. 홈보다 빨강이 밝다.
       away: {
-        colors: { k: '#282828', r: '#E8202C' },
-        torso: [
-          'kkkkkk',
-          'kkkkkk',
-          'krrrrk',
-          'kkkkkk',
-          'kkkkkk',
-          'kkkkkk',
-          'kkkkkk',
-          'kkkkkk',
-          'kkkkkk',
-        ],
+        colors: { k: '#282828' },
+        torso: FIELD('k'),
         panel: { color: '#E8202C', style: 'sash' },
+        mark: { text: 'KIA', color: '#E8202C' },
         base: '#282828',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818' },
+        cap: { crown: '#181818', bill: '#181818', mark: 'K', markColor: '#E8202C' },
       },
     },
   },
@@ -65,40 +53,22 @@ export const TEAMS = [
     kits: {
       // 2026년에 빨간 라인을 빼고 파랑·흰색으로 돌아왔다.
       home: {
-        colors: { w: '#F2F2F2', b: '#1848A8' },
-        torso: [
-          'wwwwww',
-          'wwwwww',
-          'wbbbbw',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-        ],
+        colors: { w: '#F2F2F2' },
+        torso: FIELD('w'),
         trim: ['#1848A8'],
         collar: true,
+        mark: { text: 'Lions', color: '#1848A8' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#0848A8', bill: '#0848A8' },
+        cap: { crown: '#0848A8', bill: '#0848A8', mark: 'S', markColor: '#F2F2F2' },
       },
       away: {
-        colors: { b: '#1848A8', w: '#F2F2F2' },
-        torso: [
-          'bbbbbb',
-          'bbbbbb',
-          'bwwwwb',
-          'bbbbbb',
-          'bbbbbb',
-          'bbbbbb',
-          'bbbbbb',
-          'bbbbbb',
-          'bbbbbb',
-        ],
+        colors: { b: '#1848A8' },
+        torso: FIELD('b'),
         trim: ['#F2F2F2'],
         collar: true,
+        mark: { text: 'Lions', color: '#F2F2F2' },
         base: '#1848A8',   // 소매를 칠할 옷감 색
-        cap: { crown: '#0848A8', bill: '#0848A8' },
+        cap: { crown: '#0848A8', bill: '#0848A8', mark: 'S', markColor: '#F2F2F2' },
       },
     },
   },
@@ -106,14 +76,14 @@ export const TEAMS = [
     id: 'lg',
     name: 'LG 트윈스',
     kits: {
-      // 검정 핀스트라이프 + 어깨 검정 3선. 10구단에서 유일한 세로 줄무늬 홈이다.
+      // 검정 핀스트라이프 + 어깨 검정 절개. 10구단에서 유일한 세로 줄무늬 홈이다.
       // 줄무늬는 격자에 넣지 않는다 — 6칸으로 쪼개면 검정이 절반을 먹어 굵어진다.
       home: {
-        colors: { w: '#F2F2F2', k: '#181818', r: '#C8102E' },
+        colors: { w: '#F2F2F2', k: '#181818' },
         torso: [
           'kkkkkk',
           'wwwwww',
-          'wrrrrw',
+          'wwwwww',
           'wwwwww',
           'wwwwww',
           'wwwwww',
@@ -122,15 +92,16 @@ export const TEAMS = [
           'wwwwww',
         ],
         stripe: '#181818',
+        mark: { text: 'TWINS', color: '#C8102E' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818' },
+        cap: { crown: '#181818', bill: '#181818', mark: 'LG', markColor: '#C8102E' },
       },
       away: {
-        colors: { k: '#181818', w: '#F2F2F2', r: '#C8102E' },
+        colors: { k: '#181818', w: '#F2F2F2' },
         torso: [
           'wwwwww',
           'kkkkkk',
-          'krrrrk',
+          'kkkkkk',
           'kkkkkk',
           'kkkkkk',
           'kkkkkk',
@@ -138,8 +109,9 @@ export const TEAMS = [
           'kkkkkk',
           'kkkkkk',
         ],
+        mark: { text: 'TWINS', color: '#F2F2F2' },
         base: '#181818',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818' },
+        cap: { crown: '#181818', bill: '#181818', mark: 'LG', markColor: '#C8102E' },
       },
     },
   },
@@ -147,38 +119,20 @@ export const TEAMS = [
     id: 'doosan',
     name: '두산 베어스',
     kits: {
-      // 무지에 가깝다. 가슴 스크립트의 남색과 빨강 포인트로만 갈린다.
+      // 무지에 가깝다. 가슴 스크립트의 남색 하나로만 갈린다.
       home: {
-        colors: { w: '#F2F2F2', n: '#182838', r: '#E4022D' },
-        torso: [
-          'wwwwww',
-          'wwwwww',
-          'wnnrnw',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-        ],
+        colors: { w: '#F2F2F2' },
+        torso: FIELD('w'),
+        mark: { text: 'Bears', color: '#182838' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#282848', bill: '#282848' },
+        cap: { crown: '#282848', bill: '#282848', mark: 'D', markColor: '#F2F2F2' },
       },
       away: {
-        colors: { n: '#182838', w: '#F2F2F2', r: '#E4022D' },
-        torso: [
-          'nnnnnn',
-          'nnnnnn',
-          'nwwrwn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-        ],
+        colors: { n: '#182838' },
+        torso: FIELD('n'),
+        mark: { text: 'Bears', color: '#F2F2F2' },
         base: '#182838',   // 소매를 칠할 옷감 색
-        cap: { crown: '#282848', bill: '#282848' },
+        cap: { crown: '#282848', bill: '#282848', mark: 'D', markColor: '#F2F2F2' },
       },
     },
   },
@@ -186,40 +140,22 @@ export const TEAMS = [
     id: 'kt',
     name: 'kt wiz',
     kits: {
-      // 소매 끝 검정 라인 + 가슴 글씨의 빨강 별.
+      // 소매 끝 검정 라인 + 모자의 빨간 kt.
       home: {
-        colors: { w: '#F2F2F2', k: '#181818', r: '#E8202C' },
-        torso: [
-          'wwwwww',
-          'wwwwww',
-          'wkkrkw',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-        ],
+        colors: { w: '#F2F2F2' },
+        torso: FIELD('w'),
         trim: ['#181818'],
+        mark: { text: 'wiz', color: '#181818' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818' },
+        cap: { crown: '#181818', bill: '#181818', mark: 'kt', markColor: '#E8202C' },
       },
       away: {
-        colors: { k: '#181818', w: '#F2F2F2', r: '#E8202C' },
-        torso: [
-          'kkkkkk',
-          'kkkkkk',
-          'kwwrwk',
-          'kkkkkk',
-          'kkkkkk',
-          'kkkkkk',
-          'kkkkkk',
-          'kkkkkk',
-          'kkkkkk',
-        ],
+        colors: { k: '#181818' },
+        torso: FIELD('k'),
         trim: ['#F2F2F2'],
+        mark: { text: 'wiz', color: '#F2F2F2' },
         base: '#181818',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818' },
+        cap: { crown: '#181818', bill: '#181818', mark: 'kt', markColor: '#E8202C' },
       },
     },
   },
@@ -227,42 +163,24 @@ export const TEAMS = [
     id: 'ssg',
     name: 'SSG 랜더스',
     kits: {
-      // 목·소매 빨강 트림. 가슴 글씨에 노랑 그라데이션이 섞인다.
+      // 목·소매 빨강 트림.
       home: {
-        colors: { w: '#F2F2F2', r: '#C81828', y: '#E8B830' },
-        torso: [
-          'wwwwww',
-          'wwwwww',
-          'wrryrw',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-        ],
+        colors: { w: '#F2F2F2' },
+        torso: FIELD('w'),
         trim: ['#C81828'],
         collar: true,
+        mark: { text: 'SSG', color: '#C81828' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#C81828', bill: '#C81828' },
+        cap: { crown: '#C81828', bill: '#C81828', mark: 'S', markColor: '#E8B830' },
       },
       away: {
-        colors: { r: '#C81828', w: '#F2F2F2', e: '#2E8B57' },
-        torso: [
-          'rrrrrr',
-          'rrrrrr',
-          'rwwewr',
-          'rrrrrr',
-          'rrrrrr',
-          'rrrrrr',
-          'rrrrrr',
-          'rrrrrr',
-          'rrrrrr',
-        ],
+        colors: { r: '#C81828' },
+        torso: FIELD('r'),
         trim: ['#F2F2F2'],
         collar: true,
+        mark: { text: 'SSG', color: '#F2F2F2' },
         base: '#C81828',   // 소매를 칠할 옷감 색
-        cap: { crown: '#C81828', bill: '#C81828' },
+        cap: { crown: '#C81828', bill: '#C81828', mark: 'S', markColor: '#E8B830' },
       },
     },
   },
@@ -272,36 +190,18 @@ export const TEAMS = [
     kits: {
       // 홈이 흰색이 아니라 아이보리다 — 10구단에서 여기뿐이다. 목·소매에 트림은 없다.
       home: {
-        colors: { i: '#E8E8D8', r: '#D31145' },
-        torso: [
-          'iiiiii',
-          'iiiiii',
-          'irrrri',
-          'iiiiii',
-          'iiiiii',
-          'iiiiii',
-          'iiiiii',
-          'iiiiii',
-          'iiiiii',
-        ],
+        colors: { i: '#E8E8D8' },
+        torso: FIELD('i'),
+        mark: { text: 'Giants', color: '#D31145' },
         base: '#E8E8D8',   // 소매를 칠할 옷감 색
-        cap: { crown: '#383848', bill: '#383848' },
+        cap: { crown: '#383848', bill: '#383848', mark: 'L', markColor: '#F2F2F2' },
       },
       away: {
-        colors: { n: '#282838', r: '#D31145' },
-        torso: [
-          'nnnnnn',
-          'nnnnnn',
-          'nrrrrn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-        ],
+        colors: { n: '#282838' },
+        torso: FIELD('n'),
+        mark: { text: 'Giants', color: '#F2F2F2' },
         base: '#282838',   // 소매를 칠할 옷감 색
-        cap: { crown: '#383848', bill: '#383848' },
+        cap: { crown: '#383848', bill: '#383848', mark: 'L', markColor: '#F2F2F2' },
       },
     },
   },
@@ -311,37 +211,19 @@ export const TEAMS = [
     kits: {
       // 무지 흰 바탕에 주황 스크립트 하나. 10구단 유일한 주황이다.
       home: {
-        colors: { w: '#F2F2F2', o: '#F85818' },
-        torso: [
-          'wwwwww',
-          'wwwwww',
-          'woooow',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-        ],
+        colors: { w: '#F2F2F2' },
+        torso: FIELD('w'),
+        mark: { text: 'Eagles', color: '#F85818' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#282838', bill: '#282838' },
+        cap: { crown: '#282838', bill: '#282838', mark: 'H', markColor: '#F85818' },
       },
       // 상품명은 '다크네이비'지만 실측은 거의 검정이다.
       away: {
-        colors: { d: '#282828', w: '#F2F2F2' },
-        torso: [
-          'dddddd',
-          'dddddd',
-          'dwwwwd',
-          'dddddd',
-          'dddddd',
-          'dddddd',
-          'dddddd',
-          'dddddd',
-          'dddddd',
-        ],
+        colors: { d: '#282828' },
+        torso: FIELD('d'),
+        mark: { text: 'Eagles', color: '#F85818' },
         base: '#282828',   // 소매를 칠할 옷감 색
-        cap: { crown: '#282838', bill: '#282838' },
+        cap: { crown: '#282838', bill: '#282838', mark: 'H', markColor: '#F85818' },
       },
     },
   },
@@ -351,40 +233,22 @@ export const TEAMS = [
     kits: {
       // 양 옆구리 패널 + 소매 금색 라인. 옆구리가 양쪽인 건 여기뿐이다.
       home: {
-        colors: { w: '#F2F2F2', n: '#183848' },
-        torso: [
-          'wwwwww',
-          'wwwwww',
-          'wnnnnw',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-        ],
+        colors: { w: '#F2F2F2' },
+        torso: FIELD('w'),
         panel: { color: '#183848', style: 'sides' },
         trim: ['#C8A868'],
+        mark: { text: 'NC', color: '#183848' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#183858', bill: '#183858' },
+        cap: { crown: '#183858', bill: '#183858', mark: 'NC', markColor: '#C8A868' },
       },
       away: {
-        colors: { n: '#183848', g: '#C8A868' },
-        torso: [
-          'nnnnnn',
-          'nnnnnn',
-          'nggggn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-          'nnnnnn',
-        ],
+        colors: { n: '#183848' },
+        torso: FIELD('n'),
         panel: { color: '#90B8D8', style: 'sides' },
         trim: ['#C8A868'],
+        mark: { text: 'NC', color: '#C8A868' },
         base: '#183848',   // 소매를 칠할 옷감 색
-        cap: { crown: '#183858', bill: '#183858' },
+        cap: { crown: '#183858', bill: '#183858', mark: 'NC', markColor: '#C8A868' },
       },
     },
   },
@@ -394,40 +258,22 @@ export const TEAMS = [
     kits: {
       // 보조색이 금색에서 핑크로 바뀌었다. 목·소매에 버건디+핑크 두 줄.
       home: {
-        colors: { w: '#F2F2F2', u: '#582838' },
-        torso: [
-          'wwwwww',
-          'wwwwww',
-          'wuuuuw',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-          'wwwwww',
-        ],
+        colors: { w: '#F2F2F2' },
+        torso: FIELD('w'),
         trim: ['#582838', '#E890B0'],
         collar: true,
+        mark: { text: 'Heroes', color: '#582838' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#481828', bill: '#481828' },
+        cap: { crown: '#481828', bill: '#481828', mark: 'K', markColor: '#E890B0' },
       },
       away: {
-        colors: { u: '#582838', w: '#F2F2F2' },
-        torso: [
-          'uuuuuu',
-          'uuuuuu',
-          'uwwwwu',
-          'uuuuuu',
-          'uuuuuu',
-          'uuuuuu',
-          'uuuuuu',
-          'uuuuuu',
-          'uuuuuu',
-        ],
+        colors: { u: '#582838' },
+        torso: FIELD('u'),
         trim: ['#F2F2F2', '#E890B0'],
         collar: true,
+        mark: { text: 'Heroes', color: '#F2F2F2' },
         base: '#582838',   // 소매를 칠할 옷감 색
-        cap: { crown: '#481828', bill: '#481828' },
+        cap: { crown: '#481828', bill: '#481828', mark: 'K', markColor: '#E890B0' },
       },
     },
   },

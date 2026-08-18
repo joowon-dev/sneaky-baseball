@@ -44,6 +44,24 @@ describe('TEAMS', () => {
     }
   })
 
+  it('가슴·모자 글씨가 다 있고 짧다', () => {
+    // 8px 몸통에 들어가야 해서 길면 뭉개진다. 로고 이미지는 쓰지 않는다.
+    for (const { label, kit } of kits()) {
+      expect(kit.mark.text.length, label).toBeGreaterThan(0)
+      expect(kit.mark.text.length, label).toBeLessThanOrEqual(6)
+      expect(kit.mark.color, label).toMatch(HEX)
+      expect(kit.cap.mark.length, label).toBeLessThanOrEqual(2)
+      expect(kit.cap.markColor, label).toMatch(HEX)
+    }
+  })
+
+  it('글씨 색이 그 옷 바탕색과 다르다 — 같으면 안 보인다', () => {
+    for (const { label, kit } of kits()) {
+      expect(kit.mark.color, label).not.toBe(kit.base)
+      expect(kit.cap.markColor, label).not.toBe(kit.cap.crown)
+    }
+  })
+
   it('바지는 구단과 무관하게 흰 긴바지 한 색이다', () => {
     expect(PANTS).toMatch(HEX)
     expect(PANTS).toBe('#F2F2F2')
@@ -78,9 +96,11 @@ describe('TEAMS', () => {
   })
 
   it('20벌이 서로 다르게 보인다', () => {
+    // 격자가 거의 무지가 된 지금은 글씨와 곡선 요소가 구단을 갈라 준다.
     const shapes = kits().map(({ kit }) => JSON.stringify([
       kit.torso.map((row) => [...row].map((ch) => kit.colors[ch]).join(',')),
       kit.cap,
+      kit.mark,
     ]))
     expect(new Set(shapes).size).toBe(20)
   })
