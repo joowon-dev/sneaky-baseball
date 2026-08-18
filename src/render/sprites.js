@@ -59,6 +59,16 @@ function bone(ctx, ax, ay, bx, by, w) {
   ctx.stroke()
 }
 
+/**
+ * 몸통 실루엣. 상의(`jerseyPath`)와 **같은 모양**으로 그린다.
+ * 둥근 끝을 가진 선으로 그리면 어깨선 위로 반원이 솟는데, 상의는 거기를 덮지 않으므로
+ * 목 양옆에 검은 조각이 남는다 — 목덜미가 아니라 이상한 얼룩으로 보인다.
+ */
+function torsoSilhouette(ctx, bone) {
+  jerseyPath(ctx, bone)
+  ctx.fill()
+}
+
 function blob(ctx, x, y, r) {
   ctx.beginPath()
   ctx.arc(x, y, r, 0, Math.PI * 2)
@@ -131,7 +141,7 @@ function drawBat(ctx, pose) {
 export const batterStance = {
   silhouette(ctx) {
     blob(ctx, 0.02, -0.86, 0.1)
-    bone(ctx, 0, -0.74, 0.02, -0.44, 0.17)
+    torsoSilhouette(ctx, [0, -0.74, 0.02, -0.44, 0.17])
     bone(ctx, 0.02, -0.44, -0.13, -0.02, 0.1)
     bone(ctx, 0.02, -0.44, 0.16, -0.02, 0.1)
     bone(ctx, 0, -0.7, 0.16, -0.6, 0.08)
@@ -152,7 +162,7 @@ export const batterStance = {
 export const batterSwing = {
   silhouette(ctx) {
     blob(ctx, -0.02, -0.86, 0.1)
-    bone(ctx, 0, -0.74, -0.02, -0.44, 0.17)
+    torsoSilhouette(ctx, [0, -0.74, -0.02, -0.44, 0.17])
     bone(ctx, -0.02, -0.44, -0.2, -0.02, 0.1)
     bone(ctx, -0.02, -0.44, 0.16, -0.05, 0.1)
     bone(ctx, 0, -0.7, -0.26, -0.6, 0.08)
@@ -171,7 +181,7 @@ export const batterSwing = {
 export const pitcherWindup = {
   silhouette(ctx) {
     blob(ctx, 0, -0.84, 0.11)
-    bone(ctx, 0, -0.72, 0, -0.42, 0.17)
+    torsoSilhouette(ctx, [0, -0.72, 0, -0.42, 0.17])
     bone(ctx, 0, -0.42, -0.09, -0.02, 0.1)
     bone(ctx, 0, -0.42, 0.11, -0.02, 0.1)
     bone(ctx, 0.02, -0.68, -0.14, -0.6, 0.08)
@@ -189,7 +199,7 @@ export const pitcherWindup = {
 export const pitcherRelease = {
   silhouette(ctx) {
     blob(ctx, -0.05, -0.8, 0.11)
-    bone(ctx, 0.02, -0.68, -0.02, -0.4, 0.17)
+    torsoSilhouette(ctx, [0.02, -0.68, -0.02, -0.4, 0.17])
     bone(ctx, -0.02, -0.4, -0.26, -0.02, 0.1)
     bone(ctx, -0.02, -0.4, 0.2, -0.06, 0.1)
     bone(ctx, 0.02, -0.66, -0.14, -0.76, 0.08)
