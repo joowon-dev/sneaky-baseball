@@ -37,6 +37,7 @@ sealed class OverlayContext : ApplicationContext
         tray.ContextMenuStrip = BuildMenu();
         overlay.RecordChanged += _ => tray.ContextMenuStrip = BuildMenu();
         overlay.KitChanged += () => tray.ContextMenuStrip = BuildMenu();
+        overlay.SettingsChanged += () => tray.ContextMenuStrip = BuildMenu();
     }
 
     /// <summary>메뉴에 세울 구단 목록. src/render/teams.js 의 id·name 과 같아야 한다.</summary>
@@ -64,15 +65,52 @@ sealed class OverlayContext : ApplicationContext
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem($"최고 비거리  {overlay.BestMeters}m") { Enabled = false });
-        menu.Items.Add(new ToolStripMenuItem("Alt 를 누르고 있는 동안 투구") { Enabled = false });
-        menu.Items.Add(new ToolStripMenuItem("스윙  Alt+Space") { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem($"{overlay.HoldKey.Title} 를 누르고 있는 동안 투구") { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem($"스윙  {overlay.HoldKey.Title} + Space") { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(KitMenu("타자 팀", "batter"));
         menu.Items.Add(KitMenu("투수 팀", "pitcher"));
+        menu.Items.Add(ControlKeyMenu());
+        if (Screen.AllScreens.Length > 1) menu.Items.Add(ScreenMenu());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("숨기기 / 보이기  Ctrl+Shift+B", null, (_, _) => overlay.ToggleVisible()));
         menu.Items.Add(new ToolStripMenuItem("종료", null, (_, _) => Quit()));
         return menu;
+    }
+
+    /// <summary>「조작키 ▸」. 키보드마다 있는 키가 달라서 하나로 못 정한다.</summary>
+    private ToolStripMenuItem ControlKeyMenu()
+    {
+        var root = new ToolStripMenuItem("조작키");
+        foreach (var key in Overlay.HoldKeyOption.All)
+        {
+            var id = key.Id;
+            root.DropDownItems.Add(new ToolStripMenuItem(key.Title, null, (_, _) => overlay.SetControlKey(id))
+            {
+                Checked = overlay.HoldKey.Id == id,
+            });
+        }
+        return root;
+    }
+
+    /// <summary>「모니터 ▸」. 듀얼 모니터에서 어느 화면에 얹을지. 하나뿐이면 안 낸다.</summary>
+    private ToolStripMenuItem ScreenMenu()
+    {
+        var root = new ToolStripMenuItem("모니터");
+        var screens = Screen.AllScreens;
+        for (var i = 0; i < screens.Length; i += 1)
+        {
+            var screen = screens[i];
+            var size = screen.Bounds;
+            var main = screen.Primary ? " (주 화면)" : "";
+            var title = $"{i + 1}번  {size.Width}×{size.Height}{main}";
+            var name = screen.DeviceName;
+            root.DropDownItems.Add(new ToolStripMenuItem(title, null, (_, _) => overlay.SetScreen(name))
+            {
+                Checked = overlay.ChosenScreen().DeviceName == name,
+            });
+        }
+        return root;
     }
 
     /// <summary>구단 10칸 + 홈·원정 라디오. 고른 팀이 없으면 홈·원정은 죽인다.</summary>
@@ -125,15 +163,15 @@ sealed class Overlay : Form
     private const int WS_EX_NOACTIVATE = 0x08000000;
 
     private const int WM_HOTKEY = 0x0312;
-    private const int MOD_ALT = 0x0001;
     private const int MOD_CONTROL = 0x0002;
     private const int MOD_SHIFT = 0x0004;
     private const int MOD_NOREPEAT = 0x4000;
     private const int VK_SPACE = 0x20;
     private const int VK_B = 0x42;
-    private const int VK_MENU = 0x12; // Alt
 
-    private const int HOTKEY_SWING = 1;
+    // 숨기기/보이기만 전역 핫키로 잡는다. 스윙은 핫키를 안 쓴다 —
+    // Alt+Space 는 윈도우가 **창 시스템 메뉴**로 먼저 가져가서 타격이 아예 안 왔고,
+    // Alt 는 떼는 순간 크롬 메뉴를 열어 버린다. 게다가 오른쪽 Alt 는 한/영 키다.
     private const int HOTKEY_TOGGLE = 2;
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int index);
@@ -142,11 +180,29 @@ sealed class Overlay : Form
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
 
+    /// <summary>
+    /// 투구를 누르고 있을 키. 키보드마다 있는 키가 달라 하나로 못 정하므로 고르게 한다.
+    /// 셋 다 조합키가 아니라 <b>상태를 물어보는</b> 대상이라, 다른 앱 단축키를 건드리지 않는다.
+    /// </summary>
+    public sealed record HoldKeyOption(string Id, string Title, string Hint, int Vk)
+    {
+        public static readonly HoldKeyOption[] All =
+        {
+            new("rightControl", "우측 Ctrl", "우측 Ctrl 누르고 SPACE", 0xA3),  // VK_RCONTROL
+            new("rightShift", "우측 Shift", "우측 Shift 누르고 SPACE", 0xA1),  // VK_RSHIFT
+            new("capsLock", "Caps Lock", "Caps Lock 누르고 SPACE", 0x14),      // VK_CAPITAL
+            new("f8", "F8", "F8 누르고 SPACE", 0x77),                          // VK_F8
+        };
+
+        public static HoldKeyOption Find(string? id) =>
+            Array.Find(All, k => k.Id == id) ?? All[0];
+    }
+
     /// <summary>게임 화면에는 없는 색. 이 색 픽셀이 통째로 뚫린다.</summary>
     private static readonly Color KeyColor = Color.FromArgb(255, 0, 255);
 
     private readonly WebView2 web = new();
-    private readonly System.Windows.Forms.Timer holdTimer = new() { Interval = 33 };
+    private readonly System.Windows.Forms.Timer holdTimer = new() { Interval = 8 };
     private readonly string statePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SneakyBaseball", "state.json");
 
@@ -162,6 +218,37 @@ sealed class Overlay : Form
     public event Action? KitChanged;
 
     public string? KitOf(string who) => who == "batter" ? BatterKit : PitcherKit;
+
+    private bool spaceWasDown;
+
+    /// <summary>투구 키. 안 고르면 우측 Ctrl.</summary>
+    public HoldKeyOption HoldKey { get; private set; } = HoldKeyOption.All[0];
+
+    /// <summary>얹을 모니터의 장치 이름. 없거나 사라졌으면 주 화면.</summary>
+    public string? ScreenName { get; private set; }
+    public event Action? SettingsChanged;
+
+    public void SetControlKey(string id)
+    {
+        HoldKey = HoldKeyOption.Find(id);
+        WriteState();
+        _ = web.ExecuteScriptAsync($"window.__sneakyHint && window.__sneakyHint('{HoldKey.Hint}')");
+        SettingsChanged?.Invoke();
+    }
+
+    /// <summary>고른 모니터. 케이블을 뽑았으면 주 화면으로 돌아간다.</summary>
+    public Screen ChosenScreen() =>
+        Array.Find(Screen.AllScreens, s => s.DeviceName == ScreenName)
+        ?? Screen.PrimaryScreen
+        ?? Screen.AllScreens[0];
+
+    public void SetScreen(string deviceName)
+    {
+        ScreenName = deviceName;
+        WriteState();
+        Bounds = ChosenScreen().WorkingArea;
+        SettingsChanged?.Invoke();
+    }
 
     public void SetKit(string who, string? key)
     {
@@ -184,7 +271,7 @@ sealed class Overlay : Form
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
         // 작업 표시줄 자리는 비워 둔다.
-        Bounds = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1440, 900);
+        Bounds = ChosenScreen().WorkingArea;
         BackColor = KeyColor;
         TransparencyKey = KeyColor;
 
@@ -192,7 +279,7 @@ sealed class Overlay : Form
         web.DefaultBackgroundColor = Color.Transparent;
         Controls.Add(web);
 
-        holdTimer.Tick += (_, _) => PollHoldKey();
+        holdTimer.Tick += (_, _) => PollKeys();
         holdTimer.Start();
 
         _ = InitWebAsync();
@@ -217,24 +304,18 @@ sealed class Overlay : Form
         SetWindowLong(Handle, GWL_EXSTYLE,
             GetWindowLong(Handle, GWL_EXSTYLE) | WS_EX_LAYERED | WS_EX_TRANSPARENT);
 
-        RegisterHotKey(Handle, HOTKEY_SWING, MOD_ALT | MOD_NOREPEAT, VK_SPACE);
         RegisterHotKey(Handle, HOTKEY_TOGGLE, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_B);
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        UnregisterHotKey(Handle, HOTKEY_SWING);
         UnregisterHotKey(Handle, HOTKEY_TOGGLE);
         base.OnFormClosed(e);
     }
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_HOTKEY)
-        {
-            if ((int)m.WParam == HOTKEY_SWING) Send("window.__sneakySwing && window.__sneakySwing()");
-            else ToggleVisible();
-        }
+        if (m.Msg == WM_HOTKEY) ToggleVisible();
         base.WndProc(ref m);
     }
 
@@ -272,13 +353,14 @@ sealed class Overlay : Form
         var pitcher = PitcherKit is null ? "null" : $"'{PitcherKit}'";
         return $$"""
         window.sneaky = {
-          keyHint: 'Alt 누르고 Space',
+          keyHint: '{{HoldKey.Hint}}',
           kits: { batter: {{batter}}, pitcher: {{pitcher}} },
           getRecord: () => Promise.resolve({ bestMeters: {{BestMeters}} }),
           saveRecord: (record) => window.chrome.webview.postMessage({
             type: 'record', bestMeters: record && record.bestMeters,
           }),
           onSwing: (handler) => { window.__sneakySwing = handler },
+          onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
           onKit: (handler) => { window.__sneakyKit = handler },
         }
@@ -292,13 +374,24 @@ sealed class Overlay : Form
 
     // MARK: 입력
 
-    /// <summary>Alt 를 누르고 있는 동안만 투수가 던진다. 상태만 읽으므로 권한이 필요 없다.</summary>
-    private void PollHoldKey()
+    /// <summary>
+    /// 투구 키를 누르고 있는 동안만 던지고, 그 상태에서 스페이스를 누르면 휘두른다.
+    /// 둘 다 상태를 물어봐서 안다 — 키를 가로채지 않으므로 아래 앱의 입력이 그대로 산다.
+    /// </summary>
+    private void PollKeys()
     {
-        var down = Visible && (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-        if (down == holding) return;
-        holding = down;
-        Send($"window.__sneakyHold && window.__sneakyHold({(down ? "true" : "false")})");
+        var live = Visible;
+        var down = live && (GetAsyncKeyState(HoldKey.Vk) & 0x8000) != 0;
+        if (down != holding)
+        {
+            holding = down;
+            Send($"window.__sneakyHold && window.__sneakyHold({(down ? "true" : "false")})");
+        }
+
+        // 누르고 있는 내내가 아니라 눌린 순간 한 번만.
+        var space = live && (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
+        if (space && !spaceWasDown && down) Send("window.__sneakySwing && window.__sneakySwing()");
+        spaceWasDown = space;
     }
 
     public void ToggleVisible()
@@ -344,6 +437,8 @@ sealed class Overlay : Form
             BestMeters = json.TryGetProperty("bestMeters", out var m) ? m.GetInt32() : 0;
             BatterKit = json.TryGetProperty("batterKit", out var b) ? b.GetString() : null;
             PitcherKit = json.TryGetProperty("pitcherKit", out var p) ? p.GetString() : null;
+            HoldKey = HoldKeyOption.Find(json.TryGetProperty("controlKey", out var c) ? c.GetString() : null);
+            ScreenName = json.TryGetProperty("screen", out var sc) ? sc.GetString() : null;
         }
         catch { BestMeters = 0; }
     }
@@ -358,6 +453,8 @@ sealed class Overlay : Form
                 bestMeters = BestMeters,
                 batterKit = BatterKit,
                 pitcherKit = PitcherKit,
+                controlKey = HoldKey.Id,
+                screen = ScreenName,
             }));
         }
         catch { }

@@ -94,6 +94,8 @@ if (window.sneaky) {
   // 키 이름은 셸이 알려준다 — 맥은 ⌥, 윈도우는 Alt.
   setKeyHint(window.sneaky.keyHint ?? '⌥ 누르고 SPACE')
   window.sneaky.onSwing(press)
+  // 트레이에서 조작키를 바꾸면 안내 문구도 그 자리에서 바뀐다.
+  window.sneaky.onHint?.(setKeyHint)
   window.sneaky.onHold(setHolding)
 
   // 유니폼은 트레이 메뉴에서 고른다. 처음 값은 셸이 들고 있다가 브리지에 실어 준다.
