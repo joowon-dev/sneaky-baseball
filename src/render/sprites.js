@@ -223,6 +223,10 @@ const MARK_H = 0.17
 const MARK_W = 0.86
 // 테두리를 두를 최소 글자 크기. 이보다 작으면 테두리가 글자를 다 먹는다.
 const OUTLINE_MIN = 6
+// 모자 글자 크기와 높이. 사진에서 로고는 앞면의 절반쯤이고 크라운 한가운데에 앉는다 —
+// 크게 잡으면 모자가 아니라 글자를 쓴 것처럼 보인다.
+const GLYPH_SIZE = 0.86
+const GLYPH_Y = 0.44
 
 /**
  * 장치 픽셀에 딱 맞춰 글씨를 찍는다.
@@ -306,10 +310,10 @@ function drawCapMark(ctx, pose, kit) {
 
   if (glyph) {
     ctx.save()
-    ctx.translate(hx, hy - r * 0.38)
+    ctx.translate(hx, hy - r * GLYPH_Y)
     // 타자는 flip=-1 로 그려진다. 그대로 두면 글자가 거울로 뒤집힌다.
     if (ctx.getTransform().a < 0) ctx.scale(-1, 1)
-    ctx.scale(r * 1.18, r * 1.18)
+    ctx.scale(r * GLYPH_SIZE, r * GLYPH_SIZE)
     glyph(ctx, ink)
     ctx.restore()
     return
@@ -511,10 +515,10 @@ function drawHelmet(ctx, pose, kit) {
   ctx.ellipse(hx + r * 0.3, hy + r * 0.1, r * 0.72, r * 0.55, 0, 0, Math.PI * 2)
   ctx.fill()
 
-  // 어두운 헬멧은 실루엣에 묻힌다 — 챙이 머리 밖으로 뚜렷이 나와야 쓴 걸로 읽힌다.
+  // 헬멧 챙은 모자보다 짧고 뭉툭하다 — 모자만큼 뽑으면 새 부리처럼 튀어나온다.
   ctx.fillStyle = kit.cap.bill
   ctx.beginPath()
-  ctx.ellipse(hx - r * 1.0, hy - r * 0.02, r * 0.95, r * 0.2, 0, 0, Math.PI * 2)
+  ctx.ellipse(hx - r * 0.66, hy + r * 0.02, r * 0.6, r * 0.2, 0, 0, Math.PI * 2)
   ctx.fill()
 
   if (kit.cap.mark) drawCapMark(ctx, pose, kit)
