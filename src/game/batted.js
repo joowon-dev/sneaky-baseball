@@ -18,8 +18,9 @@ export const TIME_SCALE = 0.65
 const LAUNCH_DEG = 32 // 퍼펙트 타이밍의 발사각
 const MIN_DEG = 8
 const MAX_DEG = 62
-const MAX_SPEED = 5.3 // 필드 높이 / 초
+const MAX_SPEED = 5.9 // 필드 높이 / 초
 const MIN_SPEED_RATIO = 0.35
+const POWER_CURVE = 1.25 // 클수록 완벽한 타이밍만 멀리 간다
 const DEG_PER_MS = 0.11 // 타이밍 1ms가 발사각을 바꾸는 정도
 const DEG_PER_LANE = 40 // 낮은 공일수록 각도가 깎인다
 const FOUL_SPEED_RATIO = -0.5 // 파울은 뒤로, 힘도 빠진다
@@ -38,7 +39,9 @@ const FADE_MS = 350 // 멈춘 공이 사라지기까지
  * 담장. 뚫리지 않는 벽이다 — 넘어가면 홈런, 맞으면 튕겨 나온다.
  * 판정 기준이자 화면에 그리는 그 선이라, 보이는 대로 판정된다.
  */
-export const FENCE_DIST = 2.3 // 타격점에서 담장까지
+// 타격점에서 담장까지. 힘의 상한을 올리면 홈런이 그만큼 쉬워지므로 담장도 같이 물렸다 —
+// 넘기는 타이밍 여유는 예전 그대로(가운데 공 13ms)고, 잘 맞은 타구만 더 멀리 간다.
+export const FENCE_DIST = 2.8
 export const FENCE_H = 0.09 // 담장 높이. 여기를 넘겨야 홈런
 
 /**
@@ -61,7 +64,9 @@ export function battedFlight(result, errorMs, lane = 0, launchDy = LAUNCH_DY) {
   if (result === WHIFF) return null
 
   const off = clamp(errorMs ?? 0, -WINDOWS.foul, WINDOWS.foul)
-  const power = 1 - Math.abs(off) / WINDOWS.foul
+  // 힘은 오차에 **선형이 아니라 더 가파르게** 빠진다. 선형으로 두면 천장을 올린 만큼
+  // 어중간하게 맞힌 타구까지 같이 멀리 가서, 잘 맞힌 보람이 없다.
+  const power = (1 - Math.abs(off) / WINDOWS.foul) ** POWER_CURVE
   const speed = MAX_SPEED * (MIN_SPEED_RATIO + (1 - MIN_SPEED_RATIO) * power)
 
   // 빠르게 휘두르면 퍼올려 뜨고, 늦으면 낮게 깔린다.
