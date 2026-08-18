@@ -21,11 +21,12 @@ private enum Key {
 /// **타격이 아예 안 오는** 문제가 있었다(윈도우에선 Alt+Space 가 창 메뉴를 연다).
 /// 그래서 조합키를 버리고, 겹치지 않는 키를 사용자가 고르게 한다.
 enum ControlKey: String, CaseIterable {
-    case rightControl, rightShift, capsLock, f8
+    case rightControl, option, rightShift, capsLock, f8
 
     var title: String {
         switch self {
         case .rightControl: return "우측 Ctrl"
+        case .option: return "⌥ Option"
         case .rightShift: return "우측 Shift"
         case .capsLock: return "Caps Lock"
         case .f8: return "F8"
@@ -36,18 +37,21 @@ enum ControlKey: String, CaseIterable {
     var hint: String {
         switch self {
         case .rightControl: return "우측 ⌃ 누르고 SPACE"
+        case .option: return "⌥ 누르고 SPACE"
         case .rightShift: return "우측 ⇧ 누르고 SPACE"
         case .capsLock: return "Caps Lock 누르고 SPACE"
         case .f8: return "F8 누르고 SPACE"
         }
     }
 
-    var code: CGKeyCode {
+    /// 좌우가 따로 있는 키가 있어서(⌥) 하나가 아니라 목록이다 — 아무거나 눌리면 눌린 것으로 친다.
+    var codes: [CGKeyCode] {
         switch self {
-        case .rightControl: return CGKeyCode(kVK_RightControl)
-        case .rightShift: return CGKeyCode(kVK_RightShift)
-        case .capsLock: return CGKeyCode(kVK_CapsLock)
-        case .f8: return CGKeyCode(kVK_F8)
+        case .rightControl: return [CGKeyCode(kVK_RightControl)]
+        case .option: return [CGKeyCode(kVK_Option), CGKeyCode(kVK_RightOption)]
+        case .rightShift: return [CGKeyCode(kVK_RightShift)]
+        case .capsLock: return [CGKeyCode(kVK_CapsLock)]
+        case .f8: return [CGKeyCode(kVK_F8)]
         }
     }
 }
@@ -453,7 +457,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     /// 다른 앱의 단축키(윈도우 Alt+Space 창 메뉴 같은)를 건드리지도 않는다.
     private func pollKeys() {
         let live = window.isVisible
-        let down = live && keyDown(controlKey.code)
+        let down = live && controlKey.codes.contains(where: keyDown)
         if down != holding {
             holding = down
             debugLog("hold \(down)")

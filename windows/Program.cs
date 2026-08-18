@@ -189,6 +189,9 @@ sealed class Overlay : Form
         public static readonly HoldKeyOption[] All =
         {
             new("rightControl", "우측 Ctrl", "우측 Ctrl 누르고 SPACE", 0xA3),  // VK_RCONTROL
+            // Alt 는 좌우 아무거나. 다만 Alt+Space 는 윈도우가 창 메뉴를 함께 열고,
+            // Alt 를 떼면 크롬 같은 앱이 자기 메뉴를 연다 — 그걸 감수하고 쓰는 선택지다.
+            new("option", "Alt", "Alt 누르고 SPACE", 0x12),                     // VK_MENU
             new("rightShift", "우측 Shift", "우측 Shift 누르고 SPACE", 0xA1),  // VK_RSHIFT
             new("capsLock", "Caps Lock", "Caps Lock 누르고 SPACE", 0x14),      // VK_CAPITAL
             new("f8", "F8", "F8 누르고 SPACE", 0x77),                          // VK_F8
