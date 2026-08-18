@@ -31,6 +31,8 @@ export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0, kit = nu
   }
 
   pose.silhouette(ctx)
+  // 배트는 유니폼과 무관하게 늘 나무다.
+  if (pose.batBone) drawBat(ctx, pose)
   // 유니폼은 실루엣 위에 덧그린다 — 번짐은 위에서 이미 깔렸으므로 무늬도 그 안에 들어앉는다.
   if (kit) {
     drawPants(ctx, pose)
@@ -62,6 +64,68 @@ function blob(ctx, x, y, r) {
   ctx.fill()
 }
 
+// 나무 배트. 손잡이는 가늘고 배럴로 갈수록 굵어진다 — 같은 굵기의 막대로 그리면
+// 배트가 아니라 몽둥이로 보인다. 손잡이 끝에는 손이 미끄러지지 않게 노브가 달린다.
+const BAT_TIP = 1.8      // 배럴이 손잡이보다 이만큼 굵다
+const BAT_KNOB = 0.42    // 노브 반지름(손잡이 굵기 대비)
+const BAT_WOOD = '#B87A3C'
+const BAT_GRIP = '#6B4420'
+
+/**
+ * 배트 윤곽. a(손잡이)에서 b(배럴 끝)로 갈수록 넓어지고 양 끝이 둥글다.
+ * pad 를 주면 그만큼 부풀어 실루엣의 검은 테두리가 된다.
+ */
+function batPath(ctx, [ax, ay, bx, by, w], pad = 0) {
+  const angle = Math.atan2(by - ay, bx - ax)
+  const px = Math.cos(angle + Math.PI / 2)
+  const py = Math.sin(angle + Math.PI / 2)
+  const grip = w / 2 + pad
+  const barrel = (w * BAT_TIP) / 2 + pad
+
+  ctx.beginPath()
+  ctx.moveTo(ax + px * grip, ay + py * grip)
+  ctx.lineTo(bx + px * barrel, by + py * barrel)
+  ctx.arc(bx, by, barrel, angle + Math.PI / 2, angle - Math.PI / 2, true)
+  ctx.lineTo(ax - px * grip, ay - py * grip)
+  ctx.arc(ax, ay, grip, angle - Math.PI / 2, angle + Math.PI / 2, true)
+  ctx.closePath()
+}
+
+/** 실루엣에 들어가는 배트. 나무색보다 조금 부풀려 검은 테두리를 남긴다. */
+function batSilhouette(ctx, bone) {
+  batPath(ctx, bone, 0.008)
+  ctx.fill()
+  blob(ctx, bone[0], bone[1], bone[4] * BAT_KNOB + 0.008)
+}
+
+/** 나무 결. 실루엣 위에 얹어 배트만 나무색으로 만든다. */
+function drawBat(ctx, pose) {
+  const bone = pose.batBone
+  const [ax, ay, bx, by, w] = bone
+
+  ctx.save()
+  ctx.fillStyle = BAT_WOOD
+  batPath(ctx, bone)
+  ctx.fill()
+
+  // 손잡이 그립. 노브 위로 조금만 어둡게 감는다.
+  ctx.save()
+  batPath(ctx, bone)
+  ctx.clip()
+  ctx.lineCap = 'butt'
+  ctx.strokeStyle = BAT_GRIP
+  ctx.lineWidth = w * BAT_TIP
+  ctx.beginPath()
+  ctx.moveTo(ax, ay)
+  ctx.lineTo(ax + (bx - ax) * 0.3, ay + (by - ay) * 0.3)
+  ctx.stroke()
+  ctx.restore()
+
+  ctx.fillStyle = BAT_GRIP
+  blob(ctx, ax, ay, w * BAT_KNOB)
+  ctx.restore()
+}
+
 /** 타격 준비. 배트를 뒤로 세우고 무릎을 살짝 굽힌 자세. */
 export const batterStance = {
   silhouette(ctx) {
@@ -71,8 +135,9 @@ export const batterStance = {
     bone(ctx, 0.02, -0.44, 0.16, -0.02, 0.1)
     bone(ctx, 0, -0.7, 0.16, -0.6, 0.08)
     bone(ctx, 0.16, -0.6, 0.2, -0.78, 0.08)
-    bone(ctx, 0.2, -0.78, 0.36, -1.14, 0.055)
+    batSilhouette(ctx, [0.2, -0.78, 0.36, -1.14, 0.045])
   },
+  batBone: [0.2, -0.78, 0.36, -1.14, 0.045],
   torsoBone: [0, -0.74, 0.02, -0.44, 0.17],
   sleeveBone: [0, -0.7, 0.16, -0.6, 0.08],
   legBones: [[0.02, -0.44, -0.13, -0.02, 0.1], [0.02, -0.44, 0.16, -0.02, 0.1]],
@@ -88,8 +153,9 @@ export const batterSwing = {
     bone(ctx, -0.02, -0.44, -0.2, -0.02, 0.1)
     bone(ctx, -0.02, -0.44, 0.16, -0.05, 0.1)
     bone(ctx, 0, -0.7, -0.26, -0.6, 0.08)
-    bone(ctx, -0.26, -0.6, -0.66, -0.68, 0.055)
+    batSilhouette(ctx, [-0.26, -0.6, -0.66, -0.68, 0.045])
   },
+  batBone: [-0.26, -0.6, -0.66, -0.68, 0.045],
   torsoBone: [0, -0.74, -0.02, -0.44, 0.17],
   sleeveBone: [0, -0.7, -0.26, -0.6, 0.08],
   legBones: [[-0.02, -0.44, -0.2, -0.02, 0.1], [-0.02, -0.44, 0.16, -0.05, 0.1]],
