@@ -225,8 +225,8 @@ const MARK_W = 0.86
 const OUTLINE_MIN = 6
 // 모자 글자 크기와 높이. 사진에서 로고는 앞면의 절반쯤이고 크라운 한가운데에 앉는다 —
 // 크게 잡으면 모자가 아니라 글자를 쓴 것처럼 보인다.
-const GLYPH_SIZE = 0.64
-const GLYPH_Y = 0.42
+const GLYPH_SIZE = 0.5
+const GLYPH_Y = 0.4
 
 /**
  * 장치 픽셀에 딱 맞춰 글씨를 찍는다.
