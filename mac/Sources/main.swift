@@ -79,6 +79,12 @@ private let recordKey = "bestMeters"
 private let batterKitKey = "batterKit"
 private let pitcherKitKey = "pitcherKit"
 private let controlKeyKey = "controlKey"
+
+/// 처음 깔았을 때 입고 나오는 유니폼. 타자·투수를 홈·원정으로 갈라 둬야 둘이 구분된다.
+private let defaultKits = (batter: "lotte-home", pitcher: "lotte-away")
+/// 「유니폼 없음」을 **고른 것**과 아직 안 고른 것은 다르다. 지워 버리면 다음 실행에
+/// 기본값이 다시 입혀지므로, 없음도 값으로 저장한다.
+private let noKitValue = "none"
 private let screenKey = "screenNumber"
 private let webScheme = "sneaky"
 
@@ -171,13 +177,14 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
     /// 'lg-home' 같은 키. 없으면 유니폼 없음(검은 실루엣).
     private func kit(_ who: String) -> String? {
-        UserDefaults.standard.string(forKey: who == "batter" ? batterKitKey : pitcherKitKey)
+        let stored = UserDefaults.standard.string(forKey: who == "batter" ? batterKitKey : pitcherKitKey)
+        guard let stored else { return who == "batter" ? defaultKits.batter : defaultKits.pitcher }
+        return stored == noKitValue ? nil : stored
     }
 
     private func setKit(_ who: String, _ key: String?) {
         let defaultsKey = who == "batter" ? batterKitKey : pitcherKitKey
-        if let key { UserDefaults.standard.set(key, forKey: defaultsKey) }
-        else { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+        UserDefaults.standard.set(key ?? noKitValue, forKey: defaultsKey)
 
         // 창이 숨어 있어도 밀어 넣는다 — 다시 띄웠을 때 이미 갈아입고 있어야 한다.
         let literal = key.map { "'\($0)'" } ?? "null"

@@ -56,7 +56,7 @@
   글씨는 변환을 풀고 **장치 픽셀에 맞춰** 찍는다(안 그러면 크기가 소수점이 되어 흐려지고,
   타자는 `flip=-1`이라 좌우로 뒤집힌다). 기울기는 폰트의 italic이 아니라 기울임 변환으로
   준다 — 굵은 서체는 italic 자체가 없어 브라우저가 제멋대로 흉내 낸다.
-  기본값은 유니폼 없음(그냥 실루엣).
+  기본값은 **롯데**다 — 타자 홈(아이보리), 투수 원정(네이비). 둘을 갈라 둬야 구분된다.
 - **조작**: **수식키를 누르고 있는 동안만** 투수가 던지고, 떼면 즉시 대기.
   그 상태에서 `Space`를 누르면 스윙. 두 가지를 **서로 다른 방법**으로 안다:
   누르고 있는지는 60Hz로 **상태를 물어보고**(맥 `NSEvent.modifierFlags` / 윈도우
@@ -108,6 +108,8 @@
   홈·원정을 고른다. 타자와 투수는 독립적이고, 고른 값은 셸이 저장한다(맥 `UserDefaults`,
   윈도우 `state.json`). 브라우저로 열었을 땐 메뉴가 없어 `?batter=lg-home&pitcher=kia-away`
   쿼리 파라미터로만 확인한다.
+  **「유니폼 없음」은 값으로 저장한다**(`none`) — 지워 버리면 다음 실행에 기본값이 다시
+  입혀져서, 고른 것과 안 고른 것이 구분되지 않는다.
 
 ## 실행
 ```
@@ -115,6 +117,7 @@ npm test           # 순수 모듈 단위 테스트 (vitest)
 npm start          # 맥 앱을 빌드해서 띄운다 (mac/build.sh)
 npm run build:mac  # dist/SneakyBaseball-mac.zip 까지
 npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ico)
+./mac/notarize.sh  # 서명 → 애플 공증 → 스테이플 (배포용 맥 zip 은 반드시 이걸로)
 ```
 윈도우 빌드는 윈도우에서만 된다 — `.github/workflows/release.yml` 가 태그를 밀 때 만든다.
 `SNEAKY_DEBUG=1` 로 셸 로그를, `SNEAKY_PROBE=1` 로 웹뷰 상태를 stderr 에 흘려볼 수 있다.
@@ -141,5 +144,9 @@ npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ic
 - 사이트(joowonkoh.com)의 `/playground/sneaky-baseball` 이 그 릴리스를 가리킨다.
 
 ## 남은 것
-- 코드 서명·공증 없음 — 맥은 우클릭 → 열기, 윈도우는 SmartScreen 경고를 한 번 넘겨야 한다.
+- **배포용 맥 zip 은 `./mac/notarize.sh` 로 만든다.** `build.sh` 는 임시(ad-hoc) 서명뿐이라
+  그대로 올리면 Gatekeeper 가 막는다 — macOS 15 부터는 우클릭 → 열기 우회도 없어졌다.
+  CI 의 맥 산출물도 임시 서명이라 **배포에 쓰면 안 된다**(인증서가 CI 에 없다).
+  키체인 프로필 `webswing-notary` 를 그대로 쓴다.
+- 윈도우는 코드 서명이 없어 SmartScreen 경고를 한 번 넘겨야 한다.
 - 사운드는 의도적으로 없음

@@ -221,8 +221,17 @@ sealed class Overlay : Form
     public event Action<int>? RecordChanged;
 
     /// <summary>'lg-home' 같은 키. null 이면 유니폼 없음(검은 실루엣).</summary>
-    public string? BatterKit { get; private set; }
-    public string? PitcherKit { get; private set; }
+    /// <summary>처음 깔았을 때 입고 나오는 유니폼. 타자·투수를 홈·원정으로 갈라 둬야 둘이 구분된다.</summary>
+    private const string DefaultBatterKit = "lotte-home";
+    private const string DefaultPitcherKit = "lotte-away";
+    /// <summary>
+    /// 「유니폼 없음」을 <b>고른 것</b>과 아직 안 고른 것은 다르다. null 로 지워 버리면
+    /// 다음 실행에 기본값이 다시 입혀지므로, 없음도 값으로 저장한다.
+    /// </summary>
+    private const string NoKit = "none";
+
+    public string? BatterKit { get; private set; } = DefaultBatterKit;
+    public string? PitcherKit { get; private set; } = DefaultPitcherKit;
     public event Action? KitChanged;
 
     public string? KitOf(string who) => who == "batter" ? BatterKit : PitcherKit;
@@ -441,14 +450,17 @@ sealed class Overlay : Form
         }
     }
 
+    /// <summary>저장된 값을 키로. "none" 은 사용자가 고른 「유니폼 없음」이다.</summary>
+    private static string? Stored(string? value) => value == NoKit ? null : value;
+
     private void ReadState()
     {
         try
         {
             var json = JsonDocument.Parse(File.ReadAllText(statePath)).RootElement;
             BestMeters = json.TryGetProperty("bestMeters", out var m) ? m.GetInt32() : 0;
-            BatterKit = json.TryGetProperty("batterKit", out var b) ? b.GetString() : null;
-            PitcherKit = json.TryGetProperty("pitcherKit", out var p) ? p.GetString() : null;
+            BatterKit = json.TryGetProperty("batterKit", out var b) ? Stored(b.GetString()) : DefaultBatterKit;
+            PitcherKit = json.TryGetProperty("pitcherKit", out var p) ? Stored(p.GetString()) : DefaultPitcherKit;
             HoldKey = HoldKeyOption.Find(json.TryGetProperty("controlKey", out var c) ? c.GetString() : null);
             ScreenName = json.TryGetProperty("screen", out var sc) ? sc.GetString() : null;
         }
@@ -463,8 +475,8 @@ sealed class Overlay : Form
             File.WriteAllText(statePath, JsonSerializer.Serialize(new
             {
                 bestMeters = BestMeters,
-                batterKit = BatterKit,
-                pitcherKit = PitcherKit,
+                batterKit = BatterKit ?? NoKit,
+                pitcherKit = PitcherKit ?? NoKit,
                 controlKey = HoldKey.Id,
                 screen = ScreenName,
             }));
