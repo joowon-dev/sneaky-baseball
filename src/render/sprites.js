@@ -33,6 +33,7 @@ export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0, kit = nu
   pose.silhouette(ctx)
   // 배트는 유니폼과 무관하게 늘 나무다.
   if (pose.batBone) drawBat(ctx, pose)
+  drawSkin(ctx, pose)
   // 유니폼은 실루엣 위에 덧그린다 — 번짐은 위에서 이미 깔렸으므로 무늬도 그 안에 들어앉는다.
   if (kit) {
     drawPants(ctx, pose)
@@ -140,6 +141,8 @@ export const batterStance = {
   batBone: [0.2, -0.78, 0.36, -1.14, 0.045],
   torsoBone: [0, -0.74, 0.02, -0.44, 0.17],
   sleeveBone: [0, -0.7, 0.16, -0.6, 0.08],
+  foreBone: [0.16, -0.6, 0.2, -0.78, 0.08],
+  hands: [[0.203, -0.788, 0.042], [0.228, -0.844, 0.04]],
   legBones: [[0.02, -0.44, -0.13, -0.02, 0.1], [0.02, -0.44, 0.16, -0.02, 0.1]],
   head: [0.02, -0.86, 0.1],
   helmet: true,
@@ -158,6 +161,7 @@ export const batterSwing = {
   batBone: [-0.26, -0.6, -0.66, -0.68, 0.045],
   torsoBone: [0, -0.74, -0.02, -0.44, 0.17],
   sleeveBone: [0, -0.7, -0.26, -0.6, 0.08],
+  hands: [[-0.258, -0.602, 0.042], [-0.312, -0.613, 0.04]],
   legBones: [[-0.02, -0.44, -0.2, -0.02, 0.1], [-0.02, -0.44, 0.16, -0.05, 0.1]],
   head: [-0.02, -0.86, 0.1],
   helmet: true,
@@ -175,6 +179,7 @@ export const pitcherWindup = {
   },
   torsoBone: [0, -0.72, 0, -0.42, 0.17],
   sleeveBone: [0.02, -0.68, -0.14, -0.6, 0.08],
+  hands: [[-0.16, -0.58, 0.056]],
   legBones: [[0, -0.42, -0.09, -0.02, 0.1], [0, -0.42, 0.11, -0.02, 0.1]],
   head: [0, -0.84, 0.11],
   helmet: false,
@@ -192,6 +197,8 @@ export const pitcherRelease = {
   },
   torsoBone: [0.02, -0.68, -0.02, -0.4, 0.17],
   sleeveBone: [0.02, -0.66, -0.14, -0.76, 0.08],
+  foreBone: [-0.14, -0.76, -0.34, -0.66, 0.08],
+  hands: [[-0.345, -0.655, 0.05]],
   legBones: [[-0.02, -0.4, -0.26, -0.02, 0.1], [-0.02, -0.4, 0.2, -0.06, 0.1]],
   head: [-0.05, -0.8, 0.11],
   helmet: false,
@@ -268,6 +275,13 @@ const STRIPE_RATIO = 0.07
 const PANTS_FRAC = 0.86
 // 반팔이라 윗팔을 다 덮지는 않는다.
 const SLEEVE_FRAC = 0.5
+
+// 사람 살. 실루엣보다 **작게** 그려서 남는 검정이 그대로 머리카락과 테두리가 된다 —
+// 테두리를 따로 긋지 않아도 밝은 바탕화면 위에서 사람이 읽히는 게 이 덕분이다.
+const SKIN = '#E8B88C'
+const HAIR_OFFSET = 0.12   // 얼굴을 앞쪽으로 밀어 뒤통수에 검정을 남긴다 = 머리카락
+const FACE = 0.88          // 머리 반지름 대비 얼굴 크기
+const SKIN_W = 0.76        // 팔 굵기 대비 맨살 굵기
 /**
  * 워드마크 글씨체. 사진의 세 부류를 흉내 낸다 —
  *   block  TIGERS·TWINS·EAGLES 처럼 곧게 선 굵은 대문자
@@ -400,6 +414,47 @@ function partial(ctx, [ax, ay, bx, by, w], frac, color) {
   ctx.moveTo(ax, ay)
   ctx.lineTo(ax + (bx - ax) * frac, ay + (by - ay) * frac)
   ctx.stroke()
+}
+
+/** 뼈대의 from~to 구간만 칠한다. 소매 밖으로 나온 맨팔처럼 중간부터 그릴 때 쓴다. */
+function segment(ctx, [ax, ay, bx, by, w], from, to, color, scale) {
+  ctx.strokeStyle = color
+  ctx.lineWidth = w * scale
+  ctx.beginPath()
+  ctx.moveTo(ax + (bx - ax) * from, ay + (by - ay) * from)
+  ctx.lineTo(ax + (bx - ax) * to, ay + (by - ay) * to)
+  ctx.stroke()
+}
+
+/**
+ * 사람 살 — 얼굴·목·맨팔·손. 유니폼과 무관하게 늘 그린다.
+ * 실루엣 **위에**, 유니폼 **아래에** 그린다. 그래야 상의가 목 아래를 덮고
+ * 소매가 윗팔을 덮어, 소매 밖으로 나온 아래팔만 맨살로 남는다.
+ */
+function drawSkin(ctx, pose) {
+  const [hx, hy, hr] = pose.head
+  const [tx, ty, , , tw] = pose.torsoBone
+
+  ctx.save()
+  ctx.lineCap = 'round'
+  ctx.fillStyle = SKIN
+
+  // 목. 상의가 나중에 덮으므로 옷깃 위로 나온 만큼만 보인다.
+  segment(ctx, [hx, hy + hr * 0.5, tx, ty + tw * 0.3, tw * 0.44], 0, 1, SKIN, 1)
+
+  // 얼굴. 앞쪽(로컬 -x)으로 밀어 그려 뒤통수와 정수리에 검정을 남긴다.
+  blob(ctx, hx - hr * HAIR_OFFSET, hy + hr * 0.06, hr * FACE)
+
+  // 반팔 밖으로 나온 아래팔과 손.
+  segment(ctx, pose.sleeveBone, SLEEVE_FRAC, 1, SKIN, SKIN_W)
+  if (pose.foreBone) segment(ctx, pose.foreBone, 0, 1, SKIN, SKIN_W)
+  for (const [x, y, r] of pose.hands ?? []) blob(ctx, x, y, r)
+
+  // 눈. 로컬 -x 가 바라보는 방향이라 포즈마다 따로 정할 필요가 없다.
+  // 모자·헬멧 크라운이 머리 위 절반을 덮으므로 눈은 **중심보다 아래**여야 가려지지 않는다.
+  ctx.fillStyle = '#101013'
+  blob(ctx, hx - hr * 0.48, hy + hr * 0.16, hr * 0.13)
+  ctx.restore()
 }
 
 /**
