@@ -169,9 +169,7 @@ sealed class Overlay : Form
     private const int VK_SPACE = 0x20;
     private const int VK_B = 0x42;
 
-    // 숨기기/보이기만 전역 핫키로 잡는다. 스윙은 핫키를 안 쓴다 —
-    // Alt+Space 는 윈도우가 **창 시스템 메뉴**로 먼저 가져가서 타격이 아예 안 왔고,
-    // Alt 는 떼는 순간 크롬 메뉴를 열어 버린다. 게다가 오른쪽 Alt 는 한/영 키다.
+    private const int HOTKEY_SWING = 1;
     private const int HOTKEY_TOGGLE = 2;
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int index);
@@ -181,31 +179,35 @@ sealed class Overlay : Form
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
 
     /// <summary>
-    /// 투구를 누르고 있을 키. 키보드마다 있는 키가 달라 하나로 못 정하므로 고르게 한다.
-    /// 셋 다 조합키가 아니라 <b>상태를 물어보는</b> 대상이라, 다른 앱 단축키를 건드리지 않는다.
+    /// 투구를 누르고 있을 수식키. 예전엔 Alt 고정이었는데 <b>Alt+Space 를 윈도우가 창 시스템
+    /// 메뉴로 먼저 가져가서</b> 타격이 아예 안 왔고, Alt 를 떼면 크롬이 제 메뉴를 열었다.
+    /// 오른쪽 Alt 는 한/영 키이기도 하다. 조합마다 뺏어 가는 앱이 달라 고르게 한다.
+    ///
+    /// 누르고 있는지는 <b>상태를 물어봐서</b> 알고(권한 불필요), 스윙은 `수식키+Space` 를
+    /// <b>전역 핫키로 잡는다</b>. 핫키는 키를 삼키므로 스페이스가 아래 앱에 새지 않는다.
     /// </summary>
-    public sealed record HoldKeyOption(string Id, string Title, string Hint, int Vk)
+    public sealed record HoldKeyOption(string Id, string Title, string Hint, int Mods, int[] Vks)
     {
+        private const int ALT = 0x0001, CTRL = 0x0002, SHIFT = 0x0004;
+        private const int VK_SHIFT = 0x10, VK_CTRL = 0x11, VK_ALT = 0x12;
+
         public static readonly HoldKeyOption[] All =
         {
-            new("rightControl", "우측 Ctrl", "우측 Ctrl 누르고 SPACE", 0xA3),  // VK_RCONTROL
-            // Alt 는 좌우 아무거나. 다만 Alt+Space 는 윈도우가 창 메뉴를 함께 열고,
-            // Alt 를 떼면 크롬 같은 앱이 자기 메뉴를 연다 — 그걸 감수하고 쓰는 선택지다.
-            new("option", "Alt", "Alt 누르고 SPACE", 0x12),                     // VK_MENU
-            new("rightShift", "우측 Shift", "우측 Shift 누르고 SPACE", 0xA1),  // VK_RSHIFT
-            new("capsLock", "Caps Lock", "Caps Lock 누르고 SPACE", 0x14),      // VK_CAPITAL
-            new("f8", "F8", "F8 누르고 SPACE", 0x77),                          // VK_F8
+            new("optionShift", "Alt+Shift", "Alt+Shift 누르고 SPACE", ALT | SHIFT, new[] { VK_ALT, VK_SHIFT }),
+            new("controlOption", "Ctrl+Alt", "Ctrl+Alt 누르고 SPACE", CTRL | ALT, new[] { VK_CTRL, VK_ALT }),
+            new("option", "Alt", "Alt 누르고 SPACE", ALT, new[] { VK_ALT }),
+            new("control", "Ctrl", "Ctrl 누르고 SPACE", CTRL, new[] { VK_CTRL }),
+            new("shift", "Shift", "Shift 누르고 SPACE", SHIFT, new[] { VK_SHIFT }),
         };
 
-        public static HoldKeyOption Find(string? id) =>
-            Array.Find(All, k => k.Id == id) ?? All[0];
+        public static HoldKeyOption Find(string? id) => Array.Find(All, k => k.Id == id) ?? All[0];
     }
 
     /// <summary>게임 화면에는 없는 색. 이 색 픽셀이 통째로 뚫린다.</summary>
     private static readonly Color KeyColor = Color.FromArgb(255, 0, 255);
 
     private readonly WebView2 web = new();
-    private readonly System.Windows.Forms.Timer holdTimer = new() { Interval = 8 };
+    private readonly System.Windows.Forms.Timer holdTimer = new() { Interval = 16 };
     private readonly string statePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SneakyBaseball", "state.json");
 
@@ -222,8 +224,6 @@ sealed class Overlay : Form
 
     public string? KitOf(string who) => who == "batter" ? BatterKit : PitcherKit;
 
-    private bool spaceWasDown;
-
     /// <summary>투구 키. 안 고르면 우측 Ctrl.</summary>
     public HoldKeyOption HoldKey { get; private set; } = HoldKeyOption.All[0];
 
@@ -235,6 +235,7 @@ sealed class Overlay : Form
     {
         HoldKey = HoldKeyOption.Find(id);
         WriteState();
+        if (IsHandleCreated) RegisterSwingHotKey();
         _ = web.ExecuteScriptAsync($"window.__sneakyHint && window.__sneakyHint('{HoldKey.Hint}')");
         SettingsChanged?.Invoke();
     }
@@ -307,18 +308,24 @@ sealed class Overlay : Form
         SetWindowLong(Handle, GWL_EXSTYLE,
             GetWindowLong(Handle, GWL_EXSTYLE) | WS_EX_LAYERED | WS_EX_TRANSPARENT);
 
+        RegisterSwingHotKey();
         RegisterHotKey(Handle, HOTKEY_TOGGLE, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_B);
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        UnregisterHotKey(Handle, HOTKEY_SWING);
         UnregisterHotKey(Handle, HOTKEY_TOGGLE);
         base.OnFormClosed(e);
     }
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_HOTKEY) ToggleVisible();
+        if (m.Msg == WM_HOTKEY)
+        {
+            if ((int)m.WParam == HOTKEY_SWING) Send("window.__sneakySwing && window.__sneakySwing()");
+            else ToggleVisible();
+        }
         base.WndProc(ref m);
     }
 
@@ -383,18 +390,17 @@ sealed class Overlay : Form
     /// </summary>
     private void PollKeys()
     {
-        var live = Visible;
-        var down = live && (GetAsyncKeyState(HoldKey.Vk) & 0x8000) != 0;
-        if (down != holding)
-        {
-            holding = down;
-            Send($"window.__sneakyHold && window.__sneakyHold({(down ? "true" : "false")})");
-        }
+        var down = Visible && Array.TrueForAll(HoldKey.Vks, vk => (GetAsyncKeyState(vk) & 0x8000) != 0);
+        if (down == holding) return;
+        holding = down;
+        Send($"window.__sneakyHold && window.__sneakyHold({(down ? "true" : "false")})");
+    }
 
-        // 누르고 있는 내내가 아니라 눌린 순간 한 번만.
-        var space = live && (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-        if (space && !spaceWasDown && down) Send("window.__sneakySwing && window.__sneakySwing()");
-        spaceWasDown = space;
+    /// <summary>스윙 핫키. 조작키를 바꾸면 옛것을 풀고 새로 건다.</summary>
+    private void RegisterSwingHotKey()
+    {
+        UnregisterHotKey(Handle, HOTKEY_SWING);
+        RegisterHotKey(Handle, HOTKEY_SWING, HoldKey.Mods | MOD_NOREPEAT, VK_SPACE);
     }
 
     public void ToggleVisible()

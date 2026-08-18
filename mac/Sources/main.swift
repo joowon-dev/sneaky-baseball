@@ -13,57 +13,67 @@ import WebKit
 private enum Key {
     /// ⌘⇧B — 숨기기/보이기. 이것만 전역 핫키로 잡는다(다른 앱과 겹치지 않는 조합).
     static let toggle = (code: UInt32(kVK_ANSI_B), modifiers: UInt32(cmdKey | shiftKey))
-    /// 스윙 키. 조합키가 아니라 상태를 물어보는 대상이다.
-    static let space = CGKeyCode(kVK_Space)
+    /// 스윙 — 고른 수식키 + Space. 조합키라서 핫키로 잡히고, 잡히면 키를 삼킨다.
+    static let swingCode = UInt32(kVK_Space)
 }
 
-/// 투구를 누르고 있을 키. 예전엔 ⌥ 고정이었는데 ⌥Space 가 시스템·입력기에 먹혀
-/// **타격이 아예 안 오는** 문제가 있었다(윈도우에선 Alt+Space 가 창 메뉴를 연다).
-/// 그래서 조합키를 버리고, 겹치지 않는 키를 사용자가 고르게 한다.
+/// 투구를 누르고 있을 수식키. 예전엔 ⌥ 고정이었는데 **⌥Space 가 입력기·시스템에 먹혀**
+/// 타격이 아예 안 왔다(윈도우는 Alt+Space 가 창 메뉴를 연다). 키보드·입력기마다 뺏어 가는
+/// 조합이 달라 하나로 못 정하므로 고르게 한다.
+///
+/// 누르고 있는지는 **플래그를 물어봐서** 알고(권한 불필요), 스윙은 `수식키+Space` 를
+/// **전역 핫키로 잡는다**. 핫키는 키를 삼키므로 스페이스가 아래 앱에 새지 않는다 —
+/// 상태만 물어보는 방식으로 하면 휘두를 때마다 작업 중인 문서에 공백이 찍힌다.
 enum ControlKey: String, CaseIterable {
-    case rightControl, option, rightShift, capsLock, f8
+    case optionShift, controlOption, option, control, shift
 
     var title: String {
         switch self {
-        case .rightControl: return "우측 Ctrl"
+        case .optionShift: return "⌥⇧ Option+Shift"
+        case .controlOption: return "⌃⌥ Control+Option"
         case .option: return "⌥ Option"
-        case .rightShift: return "우측 Shift"
-        case .capsLock: return "Caps Lock"
-        case .f8: return "F8"
+        case .control: return "⌃ Control"
+        case .shift: return "⇧ Shift"
         }
     }
 
     /// 화면에 띄우는 안내. 게임 쪽은 이 문자열을 그대로 그린다.
     var hint: String {
         switch self {
-        case .rightControl: return "우측 ⌃ 누르고 SPACE"
+        case .optionShift: return "⌥⇧ 누르고 SPACE"
+        case .controlOption: return "⌃⌥ 누르고 SPACE"
         case .option: return "⌥ 누르고 SPACE"
-        case .rightShift: return "우측 ⇧ 누르고 SPACE"
-        case .capsLock: return "Caps Lock 누르고 SPACE"
-        case .f8: return "F8 누르고 SPACE"
+        case .control: return "⌃ 누르고 SPACE"
+        case .shift: return "⇧ 누르고 SPACE"
         }
     }
 
-    /// 좌우가 따로 있는 키가 있어서(⌥) 하나가 아니라 목록이다 — 아무거나 눌리면 눌린 것으로 친다.
-    var codes: [CGKeyCode] {
+    /// 핫키 등록용(Carbon).
+    var carbon: UInt32 {
         switch self {
-        case .rightControl: return [CGKeyCode(kVK_RightControl)]
-        case .option: return [CGKeyCode(kVK_Option), CGKeyCode(kVK_RightOption)]
-        case .rightShift: return [CGKeyCode(kVK_RightShift)]
-        case .capsLock: return [CGKeyCode(kVK_CapsLock)]
-        case .f8: return [CGKeyCode(kVK_F8)]
+        case .optionShift: return UInt32(optionKey | shiftKey)
+        case .controlOption: return UInt32(controlKey | optionKey)
+        case .option: return UInt32(optionKey)
+        case .control: return UInt32(controlKey)
+        case .shift: return UInt32(shiftKey)
+        }
+    }
+
+    /// 누르고 있는지 볼 때 쓰는 플래그. 좌우는 구분하지 않는다 —
+    /// NSEvent.modifierFlags 가 좌우 비트를 걷어내고 주기 때문에 애초에 알 수 없다.
+    var flags: NSEvent.ModifierFlags {
+        switch self {
+        case .optionShift: return [.option, .shift]
+        case .controlOption: return [.control, .option]
+        case .option: return [.option]
+        case .control: return [.control]
+        case .shift: return [.shift]
         }
     }
 }
 
-/// 키 상태를 물어보는 주기. 이 간격이 곧 타이밍 오차라 판정 창(퍼펙트 35ms)보다
-/// 훨씬 촘촘해야 한다 — 두 번 물어보는 게 전부라 비용은 없다시피 하다.
-private let holdPollInterval: TimeInterval = 1.0 / 120.0
-
-/// 키가 눌려 있는지. 이벤트를 가로채는 게 아니라 상태를 묻는 것이라 권한이 필요 없다.
-private func keyDown(_ code: CGKeyCode) -> Bool {
-    CGEventSource.keyState(.combinedSessionState, key: code)
-}
+/// 수식키를 누르고 있는지 확인하는 주기. 상태를 묻는 것이라 권한이 필요 없다.
+private let holdPollInterval: TimeInterval = 1.0 / 60.0
 
 private let recordKey = "bestMeters"
 private let batterKitKey = "batterKit"
@@ -140,14 +150,15 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var statusItem: NSStatusItem!
     private var holdTimer: Timer?
     private var hotKeys: [EventHotKeyRef?] = []
+    private var swingHotKey: EventHotKeyRef?
     private var holding = false
-    private var spaceWasDown = false
 
     /// 투구 키. 안 고르면 우측 Ctrl.
     private var controlKey: ControlKey {
-        get { ControlKey(rawValue: UserDefaults.standard.string(forKey: controlKeyKey) ?? "") ?? .rightControl }
+        get { ControlKey(rawValue: UserDefaults.standard.string(forKey: controlKeyKey) ?? "") ?? .optionShift }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: controlKeyKey)
+            registerSwingHotKey()
             webView.evaluateJavaScript("window.__sneakyHint && window.__sneakyHint('\(newValue.hint)')")
             refreshMenu()
         }
@@ -438,38 +449,45 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             return noErr
         }, 1, &spec, nil, &handler)
 
-        for (index, key) in [Key.toggle].enumerated() {
-            var ref: EventHotKeyRef?
-            let id = EventHotKeyID(signature: OSType(0x534e4b59), id: UInt32(index)) // 'SNKY'
-            let status = RegisterEventHotKey(key.code, key.modifiers, id, GetApplicationEventTarget(), 0, &ref)
-            debugLog("hotkey \(index) 등록 status=\(status)")
-            hotKeys.append(ref)
-        }
+        registerSwingHotKey()
+
+        var ref: EventHotKeyRef?
+        let id = EventHotKeyID(signature: OSType(0x534e4b59), id: 1) // 'SNKY'
+        let status = RegisterEventHotKey(Key.toggle.code, Key.toggle.modifiers, id, GetApplicationEventTarget(), 0, &ref)
+        debugLog("toggle 핫키 status=\(status)")
+        hotKeys.append(ref)
+    }
+
+    /// 스윙 핫키. 조작키를 바꾸면 옛것을 풀고 새로 건다.
+    private func registerSwingHotKey() {
+        if let old = swingHotKey { UnregisterEventHotKey(old) }
+        var ref: EventHotKeyRef?
+        let id = EventHotKeyID(signature: OSType(0x534e4b59), id: 0)
+        let status = RegisterEventHotKey(Key.swingCode, controlKey.carbon, id,
+                                         GetApplicationEventTarget(), 0, &ref)
+        debugLog("스윙 핫키 \(controlKey.rawValue) status=\(status)")
+        swingHotKey = ref
     }
 
     fileprivate func hotKeyPressed(_ id: UInt32) {
         debugLog("hotkey \(id)")
-        toggleWindow()
+        if id == 0 {
+            guard window.isVisible else { return }
+            webView.evaluateJavaScript("window.__sneakySwing && window.__sneakySwing()")
+        } else {
+            toggleWindow()
+        }
     }
 
     /// 투구 키를 누르고 있는 동안만 던지고, 그 상태에서 스페이스를 누르면 휘두른다.
     /// 둘 다 **상태를 물어봐서** 안다 — 키 이벤트를 가로채지 않으므로 권한도 필요 없고,
     /// 다른 앱의 단축키(윈도우 Alt+Space 창 메뉴 같은)를 건드리지도 않는다.
     private func pollKeys() {
-        let live = window.isVisible
-        let down = live && controlKey.codes.contains(where: keyDown)
-        if down != holding {
-            holding = down
-            debugLog("hold \(down)")
-            webView.evaluateJavaScript("window.__sneakyHold && window.__sneakyHold(\(down))")
-        }
-
-        // 누르고 있는 내내가 아니라 **눌린 순간** 한 번만 휘두른다.
-        let space = live && keyDown(Key.space)
-        if space && !spaceWasDown && down {
-            webView.evaluateJavaScript("window.__sneakySwing && window.__sneakySwing()")
-        }
-        spaceWasDown = space
+        let down = window.isVisible && NSEvent.modifierFlags.isSuperset(of: controlKey.flags)
+        guard down != holding else { return }
+        holding = down
+        debugLog("hold \(down)")
+        webView.evaluateJavaScript("window.__sneakyHold && window.__sneakyHold(\(down))")
     }
 
     @objc private func toggleWindow() {
