@@ -37,6 +37,7 @@ export function drawFigure(ctx, pose, x, y, height, flip = 1, glow = 0, kit = nu
     if (kit.panel) drawPanel(ctx, pose, kit)
     if (kit.stripe) drawStripes(ctx, pose, kit)
     if (kit.collar) drawCollar(ctx, pose, kit)
+    if (kit.mark) drawMark(ctx, pose, kit)
     drawBelt(ctx, pose)
     drawSleeve(ctx, pose, kit)
     if (kit.trim) drawCuff(ctx, pose, kit)
@@ -146,38 +147,46 @@ function jerseyCanvas(kit) {
 }
 
 /**
- * 둥근 끝을 가진 선(lineCap: round)과 같은 모양의 채울 수 있는 경로.
- * 몸통은 선으로 그려지는데 클립은 채우기 경로만 받으므로, 같은 모양을 직접 만든다.
+ * 상의가 덮는 모양. 몸통은 둥근 끝(lineCap: round) 선으로 그려지지만, 위쪽 둥근 끝까지
+ * 옷으로 덮으면 어깨선 위로 반원이 혹처럼 솟아 옷이 아니라 두건처럼 보인다.
+ * 그래서 **위는 어깨선에서 평평하게 자르고 아래만 둥글게** 남긴다 —
+ * 잘라 낸 반원은 실루엣의 검정으로 남아 목덜미가 된다.
  */
-function capsulePath(ctx, ax, ay, bx, by, w) {
+function jerseyPath(ctx, [ax, ay, bx, by, w]) {
   const r = w / 2
   const angle = Math.atan2(by - ay, bx - ax)
+  const px = Math.cos(angle + Math.PI / 2) * r
+  const py = Math.sin(angle + Math.PI / 2) * r
+
   ctx.beginPath()
-  ctx.arc(ax, ay, r, angle + Math.PI / 2, angle - Math.PI / 2)
-  ctx.arc(bx, by, r, angle - Math.PI / 2, angle + Math.PI / 2)
+  ctx.moveTo(ax + px, ay + py)
+  ctx.lineTo(bx + px, by + py)
+  ctx.arc(bx, by, r, angle + Math.PI / 2, angle - Math.PI / 2, true)
+  ctx.lineTo(ax - px, ay - py)
   ctx.closePath()
 }
 
 /**
- * 상의. 몸통 캡슐로 클립을 잡고 그 안을 무늬로 채운다 —
- * 네모난 비트맵을 그냥 얹으면 어깨가 각지는데, 클립을 잡으면 둥근 윤곽이 남는다.
+ * 상의. 몸통 모양으로 클립을 잡고 그 안을 무늬로 채운다 —
+ * 네모난 비트맵을 그냥 얹으면 옆구리가 몸 밖으로 삐져나온다.
  */
 function drawJersey(ctx, pose, kit) {
   const [ax, ay, bx, by, w] = pose.torsoBone
   const r = w / 2
 
   ctx.save()
-  capsulePath(ctx, ax, ay, bx, by, w)
+  jerseyPath(ctx, pose.torsoBone)
   ctx.clip()
 
   // 보간을 끄면 확대해도 칸이 또렷한 네모로 남는다 — 이게 픽셀로 보이는 이유다.
+  // 위가 평평해졌으므로 격자도 어깨선(ay)에서 시작해야 첫 줄이 잘리지 않는다.
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(
     jerseyCanvas(kit),
     Math.min(ax, bx) - r,
-    Math.min(ay, by) - r,
+    Math.min(ay, by),
     Math.abs(bx - ax) + w,
-    Math.abs(by - ay) + w,
+    Math.abs(by - ay) + r,
   )
   ctx.restore()
 }
@@ -192,6 +201,78 @@ const STRIPE_RATIO = 0.07
 const PANTS_FRAC = 0.86
 // 반팔이라 윗팔을 다 덮지는 않는다.
 const SLEEVE_FRAC = 0.5
+// 글씨는 굵은 산세리프로. 셋 다 없는 환경은 없어서 마지막 sans-serif 까지 갈 일은 없다.
+const MARK_FONT = 'system-ui, -apple-system, Helvetica, Arial, sans-serif'
+// 가슴 글씨 자리. 몸통 높이의 이만큼 아래가 글씨 중심이다.
+const MARK_Y = 0.3
+// 글씨 크기와, 몸통 폭에서 글씨가 차지할 최대 비율.
+const MARK_H = 0.17
+const MARK_W = 0.86
+
+/**
+ * 장치 픽셀에 딱 맞춰 글씨를 찍는다.
+ *
+ * 단위 공간에 그대로 fillText 하면 두 가지가 깨진다 — 글자 크기가 소수점이 되어
+ * 흐려지고, 타자는 flip=-1 로 그려지므로 글씨가 좌우로 뒤집힌다.
+ * 변환을 풀고 화면 좌표에서 찍으면 둘 다 없다.
+ */
+function stamp(ctx, text, color, cx, cy, size, maxWidth) {
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.font = `700 ${size}px ${MARK_FONT}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = color
+  ctx.translate(cx, cy)
+  // 넘치면 가로로 눌러 담는다. 실제 유니폼 워드마크도 가슴 폭에 맞춰 좁혀져 있다.
+  const width = ctx.measureText(text).width
+  if (width > maxWidth) ctx.scale(maxWidth / width, 1)
+  ctx.fillText(text, 0, 0)
+  ctx.restore()
+}
+
+/** 현재 변환에서 단위 좌표를 화면 좌표로 옮기는 함수. */
+function projector(ctx) {
+  const m = ctx.getTransform()
+  return (ux, uy) => ({ x: m.a * ux + m.c * uy + m.e, y: m.b * ux + m.d * uy + m.f })
+}
+
+/**
+ * 가슴 워드마크. 예전엔 이 자리를 색 띠 한 줄로만 표시했는데,
+ * 띠는 어느 구단이든 똑같이 생겨서 결국 구단이 구분되지 않았다.
+ */
+function drawMark(ctx, pose, kit) {
+  const { cx, top, bottom, w } = torsoBox(pose)
+  const at = projector(ctx)
+  const l = at(cx - w / 2, 0).x
+  const r = at(cx + w / 2, 0).x
+  const span = Math.abs(r - l)
+  const height = Math.abs(at(0, bottom).y - at(0, top).y)
+
+  ctx.save()
+  jerseyPath(ctx, pose.torsoBone)
+  ctx.clip()
+  stamp(
+    ctx,
+    kit.mark.text,
+    kit.mark.color,
+    (l + r) / 2,
+    at(0, top + (bottom - top) * MARK_Y).y,
+    Math.max(3, Math.round(height * MARK_H)),
+    span * MARK_W,
+  )
+  ctx.restore()
+}
+
+/** 모자·헬멧 앞면 글씨. 크라운이 머리 위 절반이라 그 한가운데에 얹는다. */
+function drawCapMark(ctx, pose, kit) {
+  const [hx, hy, r] = pose.head
+  const at = projector(ctx)
+  const span = Math.abs(at(hx + r, 0).x - at(hx - r, 0).x)
+  const center = at(hx, hy - r * 0.4)
+
+  stamp(ctx, kit.cap.mark, kit.cap.markColor, center.x, center.y, Math.max(3, Math.round(span * 0.4)), span * 0.9)
+}
 
 /** 뼈대의 시작점에서 frac 만큼만 그린다. */
 function partial(ctx, [ax, ay, bx, by, w], frac, color) {
@@ -211,7 +292,7 @@ function drawStripes(ctx, pose, kit) {
   const [ax, ay, bx, by, w] = pose.torsoBone
 
   ctx.save()
-  capsulePath(ctx, ax, ay, bx, by, w)
+  jerseyPath(ctx, pose.torsoBone)
   ctx.clip()
 
   // 단위 공간에서 그으면 선이 픽셀 격자에 안 맞아 어떤 줄은 1px, 어떤 줄은 2px가 된다.
@@ -241,7 +322,8 @@ function torsoBox(pose) {
   const [ax, ay, bx, by, w] = pose.torsoBone
   return {
     cx: (ax + bx) / 2,
-    top: Math.min(ay, by) - w / 2,
+    // 위는 어깨선에서 평평하게 끝난다(jerseyPath 참고). 아래만 반원이 붙는다.
+    top: Math.min(ay, by),
     bottom: Math.max(ay, by) + w / 2,
     w,
     neck: { x: ax, y: ay, r: w / 2 },
@@ -259,41 +341,51 @@ function drawPanel(ctx, pose, kit) {
   const h = bottom - top
 
   ctx.save()
-  capsulePath(ctx, ...pose.torsoBone)
+  jerseyPath(ctx, pose.torsoBone)
   ctx.clip()
   ctx.fillStyle = kit.panel.color
 
+  // 어느 쪽이든 옆 솔기를 위에서 아래까지 탄다. 밑동에만 있으면 속옷처럼 보인다.
   for (const side of [-1, 1]) {
     const edge = cx + (side * w) / 2
+    // 겨드랑이에서 시작해 밑단으로 갈수록 넓어지는 폭.
+    const head = kit.panel.style === 'sash' ? 0.08 : 0.12
+    const foot = kit.panel.style === 'sash' ? 0.34 : 0.16
+
     ctx.beginPath()
-    if (kit.panel.style === 'sash') {
-      ctx.moveTo(edge, bottom)
-      ctx.lineTo(edge, bottom - h * 0.5)
-      ctx.quadraticCurveTo(cx + side * w * 0.34, bottom - h * 0.22, cx + side * w * 0.1, bottom)
-    } else {
-      ctx.moveTo(edge, bottom)
-      ctx.lineTo(edge, bottom - h * 0.6)
-      ctx.quadraticCurveTo(cx + side * w * 0.36, bottom - h * 0.5, cx + side * w * 0.28, bottom)
-    }
+    ctx.moveTo(edge, top)
+    ctx.lineTo(edge, bottom)
+    ctx.lineTo(cx + side * w * (0.5 - foot), bottom)
+    ctx.quadraticCurveTo(
+      cx + side * w * (0.5 - (head + foot) / 2),
+      top + h * 0.4,
+      cx + side * w * (0.5 - head),
+      top,
+    )
     ctx.closePath()
     ctx.fill()
   }
   ctx.restore()
 }
 
-/** 목 트림. 어깨 곡선을 따라 도는 얇은 호라서 가로 띠로는 절대 안 나온다. */
+/**
+ * 목 트림. 어깨 곡선을 따라 도는 얇은 호라서 가로 띠로는 절대 안 나온다.
+ * 어깨선 **위쪽**에 중심을 두고 아래로 볼록한 반원만 남겨 목둘레가 되게 한다 —
+ * 중심을 어깨선에 두면 호가 통째로 잘려 나가 아무것도 안 보인다.
+ */
 function drawCollar(ctx, pose, kit) {
   const { neck, w } = torsoBox(pose)
+  const cy = neck.y - neck.r * 0.55
 
   ctx.save()
-  capsulePath(ctx, ...pose.torsoBone)
+  jerseyPath(ctx, pose.torsoBone)
   ctx.clip()
   ctx.lineCap = 'butt'
   kit.trim.forEach((color, i) => {
     ctx.strokeStyle = color
     ctx.lineWidth = w * 0.09
     ctx.beginPath()
-    ctx.arc(neck.x, neck.y, neck.r * (0.82 - i * 0.22), Math.PI * 1.12, Math.PI * 1.88)
+    ctx.arc(neck.x, cy, neck.r * (0.92 - i * 0.2), 0, Math.PI)
     ctx.stroke()
   })
   ctx.restore()
@@ -374,6 +466,8 @@ function drawHelmet(ctx, pose, kit) {
   ctx.beginPath()
   ctx.ellipse(hx - r * 1.0, hy - r * 0.02, r * 0.95, r * 0.2, 0, 0, Math.PI * 2)
   ctx.fill()
+
+  if (kit.cap.mark) drawCapMark(ctx, pose, kit)
   ctx.restore()
 }
 
@@ -396,5 +490,7 @@ function drawCap(ctx, pose, kit) {
   ctx.beginPath()
   ctx.ellipse(hx - r * 0.55, hy - r * 0.12, r * 0.95, r * 0.22, 0, 0, Math.PI * 2)
   ctx.fill()
+
+  if (kit.cap.mark) drawCapMark(ctx, pose, kit)
   ctx.restore()
 }
