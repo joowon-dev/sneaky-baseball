@@ -7,6 +7,9 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # PR 에서도 돌린다. 윈도우 셸은 맥에서 컴파일할 수 없어 여기서만 확인된다 —
+  # 태그를 밀 때까지 기다리면 이미 릴리스가 깨진 뒤다. 릴리스 잡은 태그일 때만 돈다.
+  pull_request:
   workflow_dispatch:
 
 permissions:
