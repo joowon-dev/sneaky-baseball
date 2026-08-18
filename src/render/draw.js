@@ -21,6 +21,12 @@ const DIM = 'rgba(16, 16, 19, 0.4)'
 const SOFT = 'rgba(16, 16, 19, 0.6)'
 const HALO = 'rgba(255, 255, 255, 0.92)'
 
+// 진짜 야구공 — 흰 가죽에 빨간 실밥. 흰 공은 밝은 앱 위에서 사라지므로 검은 실루엣을
+// 먼저 깔고 그 안을 칠한다. 선수와 같은 방법이다.
+const BALL_SKIN = '#F6F5F0'
+const BALL_SEAM = '#C8202C'
+const BALL_SEAM_MIN = 4     // 이보다 작으면 실밥 선이 공을 다 먹는다
+
 // 필드 좌표는 0..1 비율. x는 왼쪽(백네트)에서 오른쪽(외야)으로.
 const GROUND_Y = 0.92
 const BATTER_X = 0.19
@@ -234,6 +240,8 @@ function drawPeople(ctx, field, spot, ui, state, now, kits) {
 function ball(ctx, x, y, r, ui, alpha = 1) {
   ctx.save()
   ctx.globalAlpha = alpha
+
+  // 검은 실루엣 + 흰 번짐. 밝은 앱 위에서는 이 테두리가, 어두운 앱 위에서는 번짐이 살린다.
   ctx.fillStyle = INK
   ctx.shadowColor = HALO
   ctx.shadowBlur = ui.glow
@@ -241,6 +249,28 @@ function ball(ctx, x, y, r, ui, alpha = 1) {
   ctx.arc(x, y, r, 0, Math.PI * 2)
   ctx.fill()
   ctx.fill()
+  ctx.shadowBlur = 0
+
+  // 테두리는 비율이 아니라 굵기로 정한다. 비율로 두면 게임 크기(반지름 4px대)에서는
+  // 1픽셀도 안 되어 사라지고, 크게 그리면 공이 아니라 검은 고리가 된다.
+  const skin = r - Math.min(Math.max(1, r * 0.14), 3)
+  ctx.beginPath()
+  ctx.arc(x, y, skin, 0, Math.PI * 2)
+  ctx.fillStyle = BALL_SKIN
+  ctx.fill()
+
+  // 실밥. 공보다 큰 원을 양옆에 하나씩 두고 공 안에 들어온 부분만 남기면
+  // 야구공 특유의 마주 보는 두 곡선이 나온다.
+  if (r >= BALL_SEAM_MIN) {
+    ctx.clip()
+    ctx.strokeStyle = BALL_SEAM
+    ctx.lineWidth = Math.max(1, r * 0.16)
+    for (const side of [-1, 1]) {
+      ctx.beginPath()
+      ctx.arc(x + side * r * 1.05, y, r * 0.95, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+  }
   ctx.restore()
 }
 
