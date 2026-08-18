@@ -31,6 +31,10 @@
   예전처럼 색 띠 한 줄로 자리만 표시하면 어느 구단이든 똑같이 생겨서 결국 구분이 안 된다.
   **낱말은 상품 사진에 쓰인 그대로다** — KIA는 `TIGERS`, NC는 `Dinos`, 키움은 `KIWOOM`,
   모자는 대개 이니셜 한 글자(`T`·`SL`·`D`·`G`·`E`). 팀 이름을 짐작해 적으면 안 된다.
+  **모자 글자만은 폰트가 아니라 손으로 그린 벡터**다(`glyphs.js`). 구단 로고는 글자 모양이지만
+  어떤 폰트에도 없는 모양이라 — KIA는 오른쪽으로 얇아지는 쐐기 `T`, LG는 꼬리가 흐르는 곡선 `T`,
+  두산은 물방울 `D` — 텍스트로 찍으면 열 구단이 다 같은 글자로 나온다.
+  글자는 원점 중심 1×1 상자에 그리고, 타자는 `flip=-1`이라 변환의 부호를 보고 되뒤집는다.
   글씨체는 구단 서체를 심을 수 없으니 성격만 셋으로 맞춘다(`mark.style`) —
   `block` 곧은 대문자 / `slant` 기운 대문자 / `script` 필기체. 대비색 테두리(`mark.outline`)가
   있어야 어두운 옷 위 어두운 글씨가 안 묻힌다.
@@ -91,7 +95,8 @@ npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ic
 - `src/game/` — 순수 모듈. Electron·Canvas를 모른다. 시간은 항상 인자(`now`)로 받는다.
   - `pitches.js` 구종·궤적·난이도 / `judge.js` 판정 / `batted.js` 타구 / `engine.js` 상태 전이
 - `src/render/` — `sprites.js` 실루엣 포즈·유니폼 덧그리기, `draw.js` 프레임 렌더,
-  `teams.js` 10구단 20벌 데이터(순수), `kit-bitmap.js` 격자 → RGBA(순수)
+  `teams.js` 10구단 20벌 데이터(순수), `kit-bitmap.js` 격자 → RGBA(순수),
+  `glyphs.js` 모자 글자 10개를 1×1 상자에 그리는 벡터 경로
 - `src/renderer/` — 루프·입력. `window.sneaky` 가 있으면 앱, 없으면 브라우저로 친다.
 - `mac/` — Swift 셸 (창·핫키·트레이·저장) + `build.sh` / `windows/` — 같은 일을 하는 .NET 셸
 - `scripts/make-icons.mjs` — 아이콘을 코드로 그린다. 의존성 없음.
