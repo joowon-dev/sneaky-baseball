@@ -32,18 +32,18 @@ export const TEAMS = [
         colors: { w: '#F2F2F2' },
         torso: FIELD('w'),
         panel: { color: '#C80828', style: 'sash' },
-        mark: { text: 'KIA', color: '#C80828' },
+        mark: { text: 'TIGERS', color: '#181818', outline: '#C80828', style: 'slant' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#C81838', bill: '#C81838', mark: 'K', markColor: '#F2F2F2' },
+        cap: { crown: '#C81838', bill: '#C81838', mark: 'T', markColor: '#181818', markOutline: '#F2F2F2' },
       },
       // 검정 바탕에 같은 패널. 홈보다 빨강이 밝다.
       away: {
         colors: { k: '#282828' },
         torso: FIELD('k'),
         panel: { color: '#E8202C', style: 'sash' },
-        mark: { text: 'KIA', color: '#E8202C' },
+        mark: { text: 'TIGERS', color: '#F2F2F2', outline: '#E8202C', style: 'slant' },
         base: '#282828',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818', mark: 'K', markColor: '#E8202C' },
+        cap: { crown: '#181818', bill: '#181818', mark: 'T', markColor: '#E8202C', markOutline: '#F2F2F2' },
       },
     },
   },
@@ -57,18 +57,18 @@ export const TEAMS = [
         torso: FIELD('w'),
         trim: ['#1848A8'],
         collar: true,
-        mark: { text: 'Lions', color: '#1848A8' },
+        mark: { text: 'Lions', color: '#1848A8', outline: '#F2F2F2', style: 'script' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#0848A8', bill: '#0848A8', mark: 'S', markColor: '#F2F2F2' },
+        cap: { crown: '#0848A8', bill: '#0848A8', mark: 'SL', markColor: '#F2F2F2' },
       },
       away: {
         colors: { b: '#1848A8' },
         torso: FIELD('b'),
         trim: ['#F2F2F2'],
         collar: true,
-        mark: { text: 'Lions', color: '#F2F2F2' },
+        mark: { text: 'Lions', color: '#F2F2F2', outline: '#103070', style: 'script' },
         base: '#1848A8',   // 소매를 칠할 옷감 색
-        cap: { crown: '#0848A8', bill: '#0848A8', mark: 'S', markColor: '#F2F2F2' },
+        cap: { crown: '#0848A8', bill: '#0848A8', mark: 'SL', markColor: '#F2F2F2' },
       },
     },
   },
@@ -92,9 +92,9 @@ export const TEAMS = [
           'wwwwww',
         ],
         stripe: '#181818',
-        mark: { text: 'TWINS', color: '#C8102E' },
+        mark: { text: 'TWINS', color: '#C8102E', outline: '#181818', style: 'block' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818', mark: 'LG', markColor: '#C8102E' },
+        cap: { crown: '#181818', bill: '#C8102E', mark: 'T', markColor: '#C8102E' },
       },
       away: {
         colors: { k: '#181818', w: '#F2F2F2' },
@@ -109,9 +109,9 @@ export const TEAMS = [
           'kkkkkk',
           'kkkkkk',
         ],
-        mark: { text: 'TWINS', color: '#F2F2F2' },
+        mark: { text: 'TWINS', color: '#C8102E', outline: '#F2F2F2', style: 'block' },
         base: '#181818',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818', mark: 'LG', markColor: '#C8102E' },
+        cap: { crown: '#181818', bill: '#C8102E', mark: 'T', markColor: '#C8102E' },
       },
     },
   },
@@ -123,14 +123,14 @@ export const TEAMS = [
       home: {
         colors: { w: '#F2F2F2' },
         torso: FIELD('w'),
-        mark: { text: 'Bears', color: '#182838' },
+        mark: { text: 'Bears', color: '#E4022D', outline: '#182838', style: 'script' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
         cap: { crown: '#282848', bill: '#282848', mark: 'D', markColor: '#F2F2F2' },
       },
       away: {
         colors: { n: '#182838' },
         torso: FIELD('n'),
-        mark: { text: 'Bears', color: '#F2F2F2' },
+        mark: { text: 'Bears', color: '#F2F2F2', outline: '#E4022D', style: 'script' },
         base: '#182838',   // 소매를 칠할 옷감 색
         cap: { crown: '#282848', bill: '#282848', mark: 'D', markColor: '#F2F2F2' },
       },
@@ -145,17 +145,17 @@ export const TEAMS = [
         colors: { w: '#F2F2F2' },
         torso: FIELD('w'),
         trim: ['#181818'],
-        mark: { text: 'wiz', color: '#181818' },
+        mark: { text: 'KT WIZ', color: '#181818', style: 'slant' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818', mark: 'kt', markColor: '#E8202C' },
+        cap: { crown: '#181818', bill: '#181818', mark: 'kt', markColor: '#F2F2F2' },
       },
       away: {
         colors: { k: '#181818' },
         torso: FIELD('k'),
         trim: ['#F2F2F2'],
-        mark: { text: 'wiz', color: '#F2F2F2' },
+        mark: { text: 'KT WIZ', color: '#F2F2F2', style: 'slant' },
         base: '#181818',   // 소매를 칠할 옷감 색
-        cap: { crown: '#181818', bill: '#181818', mark: 'kt', markColor: '#E8202C' },
+        cap: { crown: '#181818', bill: '#181818', mark: 'kt', markColor: '#F2F2F2' },
       },
     },
   },
@@ -169,18 +169,18 @@ export const TEAMS = [
         torso: FIELD('w'),
         trim: ['#C81828'],
         collar: true,
-        mark: { text: 'SSG', color: '#C81828' },
+        mark: { text: 'Landers', color: '#C81828', outline: '#E8B830', style: 'script' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#C81828', bill: '#C81828', mark: 'S', markColor: '#E8B830' },
+        cap: { crown: '#C81828', bill: '#C81828', mark: 'L', markColor: '#F2F2F2' },
       },
       away: {
         colors: { r: '#C81828' },
         torso: FIELD('r'),
         trim: ['#F2F2F2'],
         collar: true,
-        mark: { text: 'SSG', color: '#F2F2F2' },
+        mark: { text: 'Landers', color: '#F2F2F2', outline: '#2E8B57', style: 'script' },
         base: '#C81828',   // 소매를 칠할 옷감 색
-        cap: { crown: '#C81828', bill: '#C81828', mark: 'S', markColor: '#E8B830' },
+        cap: { crown: '#C81828', bill: '#C81828', mark: 'L', markColor: '#F2F2F2' },
       },
     },
   },
@@ -192,16 +192,16 @@ export const TEAMS = [
       home: {
         colors: { i: '#E8E8D8' },
         torso: FIELD('i'),
-        mark: { text: 'Giants', color: '#D31145' },
+        mark: { text: 'Giants', color: '#D31145', outline: '#282838', style: 'slant' },
         base: '#E8E8D8',   // 소매를 칠할 옷감 색
-        cap: { crown: '#383848', bill: '#383848', mark: 'L', markColor: '#F2F2F2' },
+        cap: { crown: '#383848', bill: '#383848', mark: 'G', markColor: '#D31145' },
       },
       away: {
         colors: { n: '#282838' },
         torso: FIELD('n'),
-        mark: { text: 'Giants', color: '#F2F2F2' },
+        mark: { text: 'Giants', color: '#D31145', outline: '#F2F2F2', style: 'slant' },
         base: '#282838',   // 소매를 칠할 옷감 색
-        cap: { crown: '#383848', bill: '#383848', mark: 'L', markColor: '#F2F2F2' },
+        cap: { crown: '#383848', bill: '#383848', mark: 'G', markColor: '#D31145' },
       },
     },
   },
@@ -213,17 +213,17 @@ export const TEAMS = [
       home: {
         colors: { w: '#F2F2F2' },
         torso: FIELD('w'),
-        mark: { text: 'Eagles', color: '#F85818' },
+        mark: { text: 'Eagles', color: '#F85818', style: 'script' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#282838', bill: '#282838', mark: 'H', markColor: '#F85818' },
+        cap: { crown: '#282838', bill: '#282838', mark: 'E', markColor: '#F85818' },
       },
       // 상품명은 '다크네이비'지만 실측은 거의 검정이다.
       away: {
         colors: { d: '#282828' },
         torso: FIELD('d'),
-        mark: { text: 'Eagles', color: '#F85818' },
+        mark: { text: 'EAGLES', color: '#F2F2F2', style: 'block' },
         base: '#282828',   // 소매를 칠할 옷감 색
-        cap: { crown: '#282838', bill: '#282838', mark: 'H', markColor: '#F85818' },
+        cap: { crown: '#282838', bill: '#282838', mark: 'E', markColor: '#F85818' },
       },
     },
   },
@@ -237,18 +237,18 @@ export const TEAMS = [
         torso: FIELD('w'),
         panel: { color: '#183848', style: 'sides' },
         trim: ['#C8A868'],
-        mark: { text: 'NC', color: '#183848' },
+        mark: { text: 'Dinos', color: '#183848', outline: '#C8A868', style: 'slant' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#183858', bill: '#183858', mark: 'NC', markColor: '#C8A868' },
+        cap: { crown: '#183858', bill: '#183858', mark: 'D', markColor: '#C8A868' },
       },
       away: {
         colors: { n: '#183848' },
         torso: FIELD('n'),
         panel: { color: '#90B8D8', style: 'sides' },
         trim: ['#C8A868'],
-        mark: { text: 'NC', color: '#C8A868' },
+        mark: { text: 'Dinos', color: '#D8C49C', outline: '#183848', style: 'slant' },
         base: '#183848',   // 소매를 칠할 옷감 색
-        cap: { crown: '#183858', bill: '#183858', mark: 'NC', markColor: '#C8A868' },
+        cap: { crown: '#183858', bill: '#183858', mark: 'D', markColor: '#C8A868' },
       },
     },
   },
@@ -262,18 +262,18 @@ export const TEAMS = [
         torso: FIELD('w'),
         trim: ['#582838', '#E890B0'],
         collar: true,
-        mark: { text: 'Heroes', color: '#582838' },
+        mark: { text: 'KIWOOM', color: '#582838', outline: '#E890B0', style: 'slant' },
         base: '#F2F2F2',   // 소매를 칠할 옷감 색
-        cap: { crown: '#481828', bill: '#481828', mark: 'K', markColor: '#E890B0' },
+        cap: { crown: '#481828', bill: '#481828', mark: 'K', markColor: '#F2F2F2' },
       },
       away: {
         colors: { u: '#582838' },
         torso: FIELD('u'),
         trim: ['#F2F2F2', '#E890B0'],
         collar: true,
-        mark: { text: 'Heroes', color: '#F2F2F2' },
+        mark: { text: 'KIWOOM', color: '#F2F2F2', outline: '#E890B0', style: 'slant' },
         base: '#582838',   // 소매를 칠할 옷감 색
-        cap: { crown: '#481828', bill: '#481828', mark: 'K', markColor: '#E890B0' },
+        cap: { crown: '#481828', bill: '#481828', mark: 'K', markColor: '#F2F2F2' },
       },
     },
   },
