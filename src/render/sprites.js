@@ -201,13 +201,27 @@ const STRIPE_RATIO = 0.07
 const PANTS_FRAC = 0.86
 // 반팔이라 윗팔을 다 덮지는 않는다.
 const SLEEVE_FRAC = 0.5
-// 글씨는 굵은 산세리프로. 셋 다 없는 환경은 없어서 마지막 sans-serif 까지 갈 일은 없다.
-const MARK_FONT = 'system-ui, -apple-system, Helvetica, Arial, sans-serif'
+/**
+ * 워드마크 글씨체. 사진의 세 부류를 흉내 낸다 —
+ *   block  TIGERS·TWINS·EAGLES 처럼 곧게 선 굵은 대문자
+ *   slant  KT WIZ·Giants·Dinos·KIWOOM 처럼 오른쪽으로 기운 굵은 대문자
+ *   script Lions·Bears·Landers·Eagles(홈) 처럼 흘려 쓴 필기체
+ * 구단 서체를 그대로 심을 수는 없으니 성격만 맞춘다.
+ */
+const MARK_STYLES = {
+  block: { weight: '900', slant: 0, family: `'Arial Black', Impact, system-ui, sans-serif`, size: 1 },
+  slant: { weight: '900', slant: 0.24, family: `'Arial Black', Impact, system-ui, sans-serif`, size: 1 },
+  // 필기체는 x-높이가 낮아 같은 크기로 두면 혼자 작아 보인다.
+  script: { weight: '700', slant: 0.1, family: `'Brush Script MT', 'Snell Roundhand', 'Segoe Script', cursive`, size: 1.25 },
+}
+const CAP_STYLE = MARK_STYLES.block
 // 가슴 글씨 자리. 몸통 높이의 이만큼 아래가 글씨 중심이다.
 const MARK_Y = 0.3
 // 글씨 크기와, 몸통 폭에서 글씨가 차지할 최대 비율.
 const MARK_H = 0.17
 const MARK_W = 0.86
+// 테두리를 두를 최소 글자 크기. 이보다 작으면 테두리가 글자를 다 먹는다.
+const OUTLINE_MIN = 6
 
 /**
  * 장치 픽셀에 딱 맞춰 글씨를 찍는다.
@@ -216,17 +230,32 @@ const MARK_W = 0.86
  * 흐려지고, 타자는 flip=-1 로 그려지므로 글씨가 좌우로 뒤집힌다.
  * 변환을 풀고 화면 좌표에서 찍으면 둘 다 없다.
  */
-function stamp(ctx, text, color, cx, cy, size, maxWidth) {
+function stamp(ctx, { text, color, outline, style }, cx, cy, size, maxWidth) {
+  const face = MARK_STYLES[style] ?? CAP_STYLE
+
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
-  ctx.font = `700 ${size}px ${MARK_FONT}`
+  ctx.font = `${face.weight} ${Math.round(size * face.size)}px ${face.family}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillStyle = color
   ctx.translate(cx, cy)
+  // 기울기는 폰트의 italic 대신 기울임 변환으로 준다 — 굵은 서체는 italic 자체가 없는
+  // 경우가 많아 브라우저가 제멋대로 흉내 내거나 아예 곧게 나온다.
+  if (face.slant) ctx.transform(1, 0, -face.slant, 1, 0, 0)
+
   // 넘치면 가로로 눌러 담는다. 실제 유니폼 워드마크도 가슴 폭에 맞춰 좁혀져 있다.
   const width = ctx.measureText(text).width
   if (width > maxWidth) ctx.scale(maxWidth / width, 1)
+
+  // 대부분의 워드마크는 대비색 테두리를 두른다 — 어두운 옷 위 어두운 글씨를 살리는 게
+  // 그 테두리라, 이게 없으면 절반은 옷에 묻힌다.
+  if (outline && size >= OUTLINE_MIN) {
+    ctx.strokeStyle = outline
+    ctx.lineWidth = size * 0.22
+    ctx.lineJoin = 'round'
+    ctx.strokeText(text, 0, 0)
+  }
+  ctx.fillStyle = color
   ctx.fillText(text, 0, 0)
   ctx.restore()
 }
@@ -254,8 +283,7 @@ function drawMark(ctx, pose, kit) {
   ctx.clip()
   stamp(
     ctx,
-    kit.mark.text,
-    kit.mark.color,
+    kit.mark,
     (l + r) / 2,
     at(0, top + (bottom - top) * MARK_Y).y,
     Math.max(3, Math.round(height * MARK_H)),
@@ -271,7 +299,8 @@ function drawCapMark(ctx, pose, kit) {
   const span = Math.abs(at(hx + r, 0).x - at(hx - r, 0).x)
   const center = at(hx, hy - r * 0.4)
 
-  stamp(ctx, kit.cap.mark, kit.cap.markColor, center.x, center.y, Math.max(3, Math.round(span * 0.4)), span * 0.9)
+  const mark = { text: kit.cap.mark, color: kit.cap.markColor, outline: kit.cap.markOutline, style: 'block' }
+  stamp(ctx, mark, center.x, center.y, Math.max(3, Math.round(span * 0.4)), span * 0.9)
 }
 
 /** 뼈대의 시작점에서 frac 만큼만 그린다. */
@@ -349,16 +378,18 @@ function drawPanel(ctx, pose, kit) {
   for (const side of [-1, 1]) {
     const edge = cx + (side * w) / 2
     // 겨드랑이에서 시작해 밑단으로 갈수록 넓어지는 폭.
-    const head = kit.panel.style === 'sash' ? 0.08 : 0.12
-    const foot = kit.panel.style === 'sash' ? 0.34 : 0.16
+    const head = kit.panel.style === 'sash' ? 0.05 : 0.11
+    const foot = kit.panel.style === 'sash' ? 0.24 : 0.15
 
     ctx.beginPath()
     ctx.moveTo(edge, top)
     ctx.lineTo(edge, bottom)
     ctx.lineTo(cx + side * w * (0.5 - foot), bottom)
+    // 조절점을 아래쪽(0.62)에 두어야 넓어지는 게 밑단 가까이에서만 일어난다.
+    // 가운데에 두면 가슴부터 넓어져서 옷이 아니라 조끼처럼 보인다.
     ctx.quadraticCurveTo(
-      cx + side * w * (0.5 - (head + foot) / 2),
-      top + h * 0.4,
+      cx + side * w * (0.5 - head * 1.4),
+      top + h * 0.62,
       cx + side * w * (0.5 - head),
       top,
     )

@@ -48,10 +48,22 @@ describe('TEAMS', () => {
     // 8px 몸통에 들어가야 해서 길면 뭉개진다. 로고 이미지는 쓰지 않는다.
     for (const { label, kit } of kits()) {
       expect(kit.mark.text.length, label).toBeGreaterThan(0)
-      expect(kit.mark.text.length, label).toBeLessThanOrEqual(6)
+      expect(kit.mark.text.length, label).toBeLessThanOrEqual(8)
       expect(kit.mark.color, label).toMatch(HEX)
+      expect(['block', 'slant', 'script'], label).toContain(kit.mark.style)
+      if (kit.mark.outline) expect(kit.mark.outline, label).toMatch(HEX)
       expect(kit.cap.mark.length, label).toBeLessThanOrEqual(2)
       expect(kit.cap.markColor, label).toMatch(HEX)
+      if (kit.cap.markOutline) expect(kit.cap.markOutline, label).toMatch(HEX)
+    }
+  })
+
+  it('가슴 글씨가 홈·원정에서 같은 낱말이다 — 팀 이름은 안 바뀐다', () => {
+    // 대소문자까지 같지는 않다. 한화는 홈이 필기체 Eagles, 원정이 대문자 EAGLES 다.
+    for (const team of TEAMS) {
+      const [home, away] = [team.kits.home, team.kits.away]
+      expect(home.mark.text.toUpperCase(), team.id).toBe(away.mark.text.toUpperCase())
+      expect(home.cap.mark, team.id).toBe(away.cap.mark)
     }
   })
 
