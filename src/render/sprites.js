@@ -6,6 +6,7 @@
 
 import { kitRGBA, jerseyBase } from './kit-bitmap.js'
 import { GRID_W, GRID_H, PANTS } from './teams.js'
+import { CAP_GLYPHS } from './glyphs.js'
 
 /**
  * 포즈를 (x, y) 지점에 height 픽셀 크기로 그린다. flip=-1이면 좌우 반전.
@@ -292,15 +293,33 @@ function drawMark(ctx, pose, kit) {
   ctx.restore()
 }
 
-/** 모자·헬멧 앞면 글씨. 크라운이 머리 위 절반이라 그 한가운데에 얹는다. */
+/**
+ * 모자·헬멧 앞면 글자. 크라운이 머리 위 절반이라 그 한가운데에 얹는다.
+ *
+ * 구단 로고는 글자 모양이지만 어떤 폰트에도 없는 모양이라(`glyphs.js` 참고) 손으로 그린
+ * 글자를 우선 쓰고, 없는 구단만 텍스트로 떨어진다.
+ */
 function drawCapMark(ctx, pose, kit) {
   const [hx, hy, r] = pose.head
+  const ink = { color: kit.cap.markColor, outline: kit.cap.markOutline, accent: kit.cap.markAccent }
+  const glyph = CAP_GLYPHS[kit.cap.glyph]
+
+  if (glyph) {
+    ctx.save()
+    ctx.translate(hx, hy - r * 0.38)
+    // 타자는 flip=-1 로 그려진다. 그대로 두면 글자가 거울로 뒤집힌다.
+    if (ctx.getTransform().a < 0) ctx.scale(-1, 1)
+    ctx.scale(r * 1.18, r * 1.18)
+    glyph(ctx, ink)
+    ctx.restore()
+    return
+  }
+
   const at = projector(ctx)
   const span = Math.abs(at(hx + r, 0).x - at(hx - r, 0).x)
   const center = at(hx, hy - r * 0.4)
-
-  const mark = { text: kit.cap.mark, color: kit.cap.markColor, outline: kit.cap.markOutline, style: 'block' }
-  stamp(ctx, mark, center.x, center.y, Math.max(3, Math.round(span * 0.4)), span * 0.9)
+  stamp(ctx, { ...ink, text: kit.cap.mark, style: 'block' }, center.x, center.y,
+    Math.max(3, Math.round(span * 0.4)), span * 0.9)
 }
 
 /** 뼈대의 시작점에서 frac 만큼만 그린다. */
