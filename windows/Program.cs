@@ -193,9 +193,12 @@ sealed class Overlay : Form
 
         public static readonly HoldKeyOption[] All =
         {
+            // Alt 는 좌우 아무거나. 다만 Alt+Space 는 윈도우가 창 메뉴를 함께 열고,
+            // Alt 를 떼면 크롬 같은 앱이 자기 메뉴를 연다 — 그걸 감수하고 쓰는 기본값이다.
+            // 걸리는 사람은 트레이에서 다른 조합으로 바꾸면 된다.
+            new("option", "Alt", "Alt 누르고 SPACE", ALT, new[] { VK_ALT }),
             new("optionShift", "Alt+Shift", "Alt+Shift 누르고 SPACE", ALT | SHIFT, new[] { VK_ALT, VK_SHIFT }),
             new("controlOption", "Ctrl+Alt", "Ctrl+Alt 누르고 SPACE", CTRL | ALT, new[] { VK_CTRL, VK_ALT }),
-            new("option", "Alt", "Alt 누르고 SPACE", ALT, new[] { VK_ALT }),
             new("control", "Ctrl", "Ctrl 누르고 SPACE", CTRL, new[] { VK_CTRL }),
             new("shift", "Shift", "Shift 누르고 SPACE", SHIFT, new[] { VK_SHIFT }),
         };

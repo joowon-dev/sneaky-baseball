@@ -25,7 +25,7 @@ private enum Key {
 /// **전역 핫키로 잡는다**. 핫키는 키를 삼키므로 스페이스가 아래 앱에 새지 않는다 —
 /// 상태만 물어보는 방식으로 하면 휘두를 때마다 작업 중인 문서에 공백이 찍힌다.
 enum ControlKey: String, CaseIterable {
-    case optionShift, controlOption, option, control, shift
+    case option, optionShift, controlOption, control, shift
 
     var title: String {
         switch self {
@@ -155,7 +155,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
     /// 투구 키. 안 고르면 우측 Ctrl.
     private var controlKey: ControlKey {
-        get { ControlKey(rawValue: UserDefaults.standard.string(forKey: controlKeyKey) ?? "") ?? .optionShift }
+        get { ControlKey(rawValue: UserDefaults.standard.string(forKey: controlKeyKey) ?? "") ?? .option }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: controlKeyKey)
             registerSwingHotKey()
