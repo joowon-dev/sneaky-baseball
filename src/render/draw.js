@@ -109,7 +109,10 @@ export function layout(width, height) {
   return { x: MARGIN_X, y: height - MARGIN_Y - h, w, h }
 }
 
-export function draw(ctx, width, height, state, now, kits = NO_KITS, pitcherX = PITCHER_X_BASE) {
+export function draw(
+  ctx, width, height, state, now,
+  kits = NO_KITS, pitcherX = PITCHER_X_BASE, grabbable = false,
+) {
   ctx.clearRect(0, 0, width, height)
 
   const field = layout(width, height)
@@ -131,6 +134,7 @@ export function draw(ctx, width, height, state, now, kits = NO_KITS, pitcherX = 
   drawScore(ctx, field, ui, state)
   drawContactMark(ctx, spot, ui, state, now)
   drawPeople(ctx, field, spot, ui, state, now, kits, pitcherX)
+  if (grabbable) drawGrabHint(ctx, field, spot, ui, pitcherX)
 
   // 안 친 공은 결과가 난 뒤에도 계속 날아가 뒤로 빠진다.
   const missed = state.phase === RESULT && state.lastResult?.result === WHIFF
@@ -237,6 +241,38 @@ function drawContactMark(ctx, spot, ui, state, now) {
   ctx.moveTo(spot.contact.x, spot.contact.y - ui.tick)
   ctx.lineTo(spot.contact.x, spot.contact.y + ui.tick)
   ctx.stroke()
+  ctx.stroke()
+  ctx.restore()
+}
+
+/**
+ * 잡을 수 있다는 표시. 커서가 투수 위에 왔을 때만 뜬다(앱에서는 수식키를 누른
+ * 동안에만 커서가 닿는다) — 이게 없으면 투수를 옮길 수 있다는 걸 알 길이 없다.
+ */
+function drawGrabHint(ctx, field, spot, ui, pitcherX) {
+  const x = field.w * pitcherX
+  const y = spot.ground + ui.tick * 0.8
+  const arm = ui.tick * 1.6
+  const head = ui.k * 3
+
+  ctx.save()
+  ctx.shadowColor = HALO
+  ctx.shadowBlur = ui.glow
+  ctx.strokeStyle = INK
+  ctx.lineWidth = Math.max(1, ui.k)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  ctx.beginPath()
+  ctx.moveTo(x - arm, y)
+  ctx.lineTo(x + arm, y)
+  // 양끝 화살촉 — 좌우로 움직인다는 뜻이다.
+  ctx.moveTo(x - arm + head, y - head)
+  ctx.lineTo(x - arm, y)
+  ctx.lineTo(x - arm + head, y + head)
+  ctx.moveTo(x + arm - head, y - head)
+  ctx.lineTo(x + arm, y)
+  ctx.lineTo(x + arm - head, y + head)
   ctx.stroke()
   ctx.restore()
 }
