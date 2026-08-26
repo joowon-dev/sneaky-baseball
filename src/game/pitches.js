@@ -26,12 +26,13 @@ export function curveRatio(homeRuns) {
 /**
  * 다음 투구를 만든다.
  * rand는 [0,1) 두 개를 뽑는 함수 — 구종과 높낮이에 쓰인다. 테스트에서 주입한다.
+ * ratio는 투수가 선 자리의 거리 비율(distanceRatio) — 가까우면 공이 일찍 온다.
  */
-export function nextPitch(homeRuns, rand = Math.random) {
+export function nextPitch(homeRuns, rand = Math.random, ratio = 1) {
   const def = rand() < curveRatio(homeRuns) ? DEFS[CURVE] : DEFS[FASTBALL]
   return {
     ...def,
-    flightMs: Math.round(def.flightMs * speedFactor(homeRuns)),
+    flightMs: Math.round(def.flightMs * speedFactor(homeRuns) * ratio),
     lane: (rand() - 0.5) * LANE_SPREAD,
   }
 }
@@ -52,4 +53,33 @@ export function ballPosition(pitch, t) {
     travel: p,
     offset: pitch.lane + pitch.drop * broken * broken * broken,
   }
+}
+
+/**
+ * 투수가 서는 자리. 필드 상자 가로 비율이고, 그림과 판정이 **같은 값**을 본다.
+ * 플레이어가 드래그해서 옮기면 던지는 거리가 바뀌고, 거리가 바뀌면 공이 오는
+ * 시간도 그만큼 바뀐다 — 그래야 이름만 난이도가 아니라 진짜 난이도가 된다.
+ *
+ * 범위는 **좁다.** 최고 비거리 기록을 하나로 두기 때문이다 — 넓히면 멀찍이
+ * 밀어 두고 세운 기록이 판을 차지한다. **범위를 넓히려면 기록을 갈라야 한다.**
+ */
+export const PITCHER_X_BASE = 0.87
+export const PITCHER_X_MIN = 0.78
+export const PITCHER_X_MAX = 0.93
+
+/** 타격점과 릴리스 지점 — draw.js 의 geometry() 와 같은 식이다. */
+export const CONTACT_X = 0.215 // BATTER_X(0.19) + 0.025
+const RELEASE_BACK = 0.06 // 릴리스는 투수 몸통보다 이만큼 앞이다
+
+const BASE_DIST = PITCHER_X_BASE - RELEASE_BACK - CONTACT_X
+
+/** 범위 밖은 잘라 낸다. 값이 아니면 기본 자리로. */
+export function clampPitcherX(x) {
+  if (!Number.isFinite(x)) return PITCHER_X_BASE
+  return Math.min(PITCHER_X_MAX, Math.max(PITCHER_X_MIN, x))
+}
+
+/** 기본 자리 대비 던지는 거리의 비율. 그대로 flightMs 에 곱한다. */
+export function distanceRatio(pitcherX) {
+  return (clampPitcherX(pitcherX) - RELEASE_BACK - CONTACT_X) / BASE_DIST
 }
