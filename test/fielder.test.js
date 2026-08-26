@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { battedFlight, FENCE_DIST } from '../src/game/batted.js'
-import { HIT, FOUL } from '../src/game/judge.js'
+import { battedFlight, clearsFence, FENCE_DIST } from '../src/game/batted.js'
+import { HOMERUN, HIT, OUT, FOUL } from '../src/game/judge.js'
 import { chase, START_X, RUN_SPEED, REACH } from '../src/game/fielder.js'
 
 describe('chase', () => {
@@ -64,5 +64,47 @@ describe('chase', () => {
     expect(START_X).toBeGreaterThan(0)
     expect(RUN_SPEED).toBeGreaterThan(0)
     expect(REACH).toBeGreaterThan(0)
+  })
+})
+
+/** 타이밍 오차 하나가 어떤 결과가 되는지 — engine 과 같은 순서로 판정한다. */
+function outcomeAt(off) {
+  const flight = battedFlight(HIT, off, 0)
+  if (clearsFence(flight)) return HOMERUN
+  return chase(flight)?.caught ? OUT : HIT
+}
+
+/**
+ * 상수 셋(START_X·RUN_SPEED·REACH)이 만드는 결과 분포를 못 박는다.
+ * 야수가 너무 잘 잡으면 안타가 사라지고, 못 잡으면 세운 의미가 없다.
+ */
+describe('타구 밴드', () => {
+  const band = (want) => {
+    let n = 0
+    for (let off = 0; off <= 80; off += 1) if (outcomeAt(off) === want) n += 1
+    return n
+  }
+
+  it('완벽에 가까우면 홈런이다', () => {
+    expect(outcomeAt(0)).toBe(HOMERUN)
+  })
+
+  it('굿 윈도우 안에서 아웃이 절반을 넘지 않는다', () => {
+    // 넘으면 잘 맞힌 타구가 죄다 잡혀서 안타가 사라진다.
+    expect(band(OUT)).toBeLessThanOrEqual(40)
+  })
+
+  it('굿 윈도우 안에 아웃도 안타도 충분히 있다', () => {
+    expect(band(OUT)).toBeGreaterThanOrEqual(10)
+    expect(band(HIT)).toBeGreaterThanOrEqual(10)
+  })
+
+  it('힘없이 맞은 공은 야수가 못 온다', () => {
+    expect(outcomeAt(78)).toBe(HIT)
+  })
+
+  it('담장을 직격한 타구는 야수가 못 잡는다 — 공중에서 벽에 막혔다', () => {
+    // 홈런 문턱 바로 밖. 넘기진 못했지만 야수 머리 위로 벽까지 날아간다.
+    expect(outcomeAt(15)).toBe(HIT)
   })
 })
