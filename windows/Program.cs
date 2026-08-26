@@ -4,6 +4,7 @@
 // 바탕화면을 덮는 투명·클릭 통과 오버레이, 전역 단축키, 트레이 아이콘, 기록 저장.
 // mac/Sources/main.swift 와 같은 일을 하고, 브리지(window.sneaky)도 같은 모양이다.
 
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
@@ -387,6 +388,9 @@ sealed class Overlay : Form
     {
         var batter = BatterKit is null ? "null" : $"'{BatterKit}'";
         var pitcher = PitcherKit is null ? "null" : $"'{PitcherKit}'";
+        // 소수점은 반드시 마침표여야 한다 — 쉼표를 쓰는 로캘에서 0,87 로 찍히면
+        // 브리지 스크립트가 통째로 문법 오류가 난다.
+        var px = PitcherX.ToString(CultureInfo.InvariantCulture);
         return $$"""
         window.sneaky = {
           keyHint: '{{HoldKey.Hint}}',
@@ -399,7 +403,7 @@ sealed class Overlay : Form
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
           onKit: (handler) => { window.__sneakyKit = handler },
-          pitcherX: {{PitcherX}},
+          pitcherX: {{px}},
           savePitcherX: (x) => window.chrome.webview.postMessage({
             type: 'pitcherX', value: x,
           }),
