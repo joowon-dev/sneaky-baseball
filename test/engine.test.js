@@ -181,8 +181,10 @@ describe('settle', () => {
   })
 
   it('약하게 맞은 공은 금방 멈춰 다음 공이 빨리 온다', () => {
-    const solid = swingWith(0)
-    const weak = swingWith(140)
+    // 둘 다 야수를 피한 안타다. 파울은 이제 팝파울이라 높이 떠서 오히려 오래 걸리고,
+    // 잘 맞은 타구는 홈런이거나 아웃이라 궤적이 중간에 끊긴다.
+    const solid = swingWith(55)
+    const weak = swingWith(78)
     expect(weak.restAt - weak.resultAt).toBeLessThan(solid.restAt - solid.resultAt)
   })
 })
