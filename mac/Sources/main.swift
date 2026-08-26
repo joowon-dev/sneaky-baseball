@@ -76,6 +76,8 @@ enum ControlKey: String, CaseIterable {
 private let holdPollInterval: TimeInterval = 1.0 / 60.0
 
 private let recordKey = "bestMeters"
+private let pitcherXKey = "pitcherX"
+private let defaultPitcherX = 0.87
 private let batterKitKey = "batterKit"
 private let pitcherKitKey = "pitcherKit"
 private let controlKeyKey = "controlKey"
@@ -174,6 +176,24 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         get { UserDefaults.standard.integer(forKey: recordKey) }
         set { UserDefaults.standard.set(newValue, forKey: recordKey) }
     }
+
+    /// 투수가 선 자리(필드 상자 가로 비율). 플레이어가 드래그로 옮긴다.
+    /// 옮기면 던지는 거리가 바뀌고, 거리가 곧 투구 시간이다.
+    private var pitcherX: Double {
+        get {
+            let v = UserDefaults.standard.double(forKey: pitcherXKey)
+            return v == 0 ? defaultPitcherX : v
+        }
+        set { UserDefaults.standard.set(newValue, forKey: pitcherXKey) }
+    }
+
+    /// 투수를 잡을 수 있는 자리 — **게임이 알려준다**(CSS 픽셀, 창 왼쪽 위 기준).
+    /// 화면 어디에 그려지는지는 그리는 쪽만 알기 때문이다.
+    private var hitbox: CGRect = .zero
+    /// 지금 클릭이 창을 통과하고 있는가. 매 프레임 창을 건드리지 않으려고 들고 있는다.
+    private var passingThrough = true
+    /// 커서가 투수 위에 있었는가. 디버그 로그를 바뀔 때만 찍으려고 들고 있는다.
+    private var cursorWasOver = false
 
     /// 'lg-home' 같은 키. 없으면 유니폼 없음(검은 실루엣).
     private func kit(_ who: String) -> String? {
@@ -276,6 +296,14 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
           onKit: (handler) => { window.__sneakyKit = handler },
+          pitcherX: \(pitcherX),
+          savePitcherX: (x) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'pitcherX', value: x,
+          }),
+          setHitbox: (box) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'hitbox', x: box.x, y: box.y, w: box.w, h: box.h,
+          }),
+          onPitcherX: (handler) => { window.__sneakyPitcherX = handler },
         }
         // 웹뷰는 콘솔이 안 보인다. 오류만이라도 셸의 stderr 로 흘려보낸다.
         window.addEventListener('error', (e) => window.webkit.messageHandlers.sneaky.postMessage({
@@ -491,10 +519,40 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     /// 다른 앱의 단축키(윈도우 Alt+Space 창 메뉴 같은)를 건드리지도 않는다.
     private func pollKeys() {
         let down = window.isVisible && NSEvent.modifierFlags.isSuperset(of: controlKey.flags)
-        guard down != holding else { return }
-        holding = down
-        debugLog("hold \(down)")
-        webView.evaluateJavaScript("window.__sneakyHold && window.__sneakyHold(\(down))")
+        if down != holding {
+            holding = down
+            debugLog("hold \(down)")
+            webView.evaluateJavaScript("window.__sneakyHold && window.__sneakyHold(\(down))")
+        }
+        updateMousePass(holding: down)
+
+        // 수식키를 안 눌러도 좌표 변환이 맞는지 볼 수 있게 커서 상태만 따로 흘린다.
+        let over = cursorInHitbox()
+        if over != cursorWasOver {
+            cursorWasOver = over
+            debugLog("cursor over pitcher: \(over)")
+        }
+    }
+
+    /// 커서가 투수 위에 있고 수식키를 누르고 있으면 그 순간만 마우스를 받는다.
+    /// **클릭 통과에 파는 예외는 여기 한 군데뿐이다** — 그 밖의 모든 순간·모든 자리는
+    /// 지금처럼 전부 밑의 앱으로 통과한다.
+    private func updateMousePass(holding: Bool) {
+        let wantPass = !(holding && cursorInHitbox())
+        guard wantPass != passingThrough else { return }
+        passingThrough = wantPass
+        window.ignoresMouseEvents = wantPass
+        debugLog("pass \(wantPass)")
+    }
+
+    /// NSEvent.mouseLocation 은 전역 좌표(왼쪽 아래 원점)다. 히트박스는 웹뷰가 준
+    /// CSS 픽셀(창 왼쪽 위 원점)이라 창 기준으로 뒤집어 맞춘다.
+    /// 상태를 물어볼 뿐이라 손쉬운 사용 권한이 필요 없다 — 수식키 폴링과 같은 성질이다.
+    private func cursorInHitbox() -> Bool {
+        guard hitbox.width > 0, window.isVisible else { return false }
+        let mouse = NSEvent.mouseLocation
+        let frame = window.frame
+        return hitbox.contains(CGPoint(x: mouse.x - frame.minX, y: frame.maxY - mouse.y))
     }
 
     @objc private func toggleWindow() {
@@ -504,6 +562,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
                 holding = false
                 webView.evaluateJavaScript("window.__sneakyHold && window.__sneakyHold(false)")
             }
+            updateMousePass(holding: false)
         } else {
             window.orderFrontRegardless()
         }
@@ -516,6 +575,19 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
         if body["type"] as? String == "log", let text = body["text"] as? String {
             FileHandle.standardError.write("[web] \(text)\n".data(using: .utf8)!)
+            return
+        }
+
+        if body["type"] as? String == "hitbox" {
+            hitbox = CGRect(
+                x: body["x"] as? Double ?? 0, y: body["y"] as? Double ?? 0,
+                width: body["w"] as? Double ?? 0, height: body["h"] as? Double ?? 0)
+            debugLog("hitbox \(hitbox)")
+            return
+        }
+
+        if body["type"] as? String == "pitcherX", let x = body["value"] as? Double {
+            pitcherX = x
             return
         }
 
