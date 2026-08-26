@@ -3,8 +3,9 @@ import {
   createGame, startPitch, swing, tick, settle, progress,
   idle, nextPitchAt, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, OUTCOME_MS,
 } from '../src/game/engine.js'
-import { HOMERUN, HIT, FOUL, WHIFF, WINDOWS } from '../src/game/judge.js'
-import { battedFlight, clearsFence, meters } from '../src/game/batted.js'
+import { HOMERUN, HIT, OUT, FOUL, WHIFF, WINDOWS } from '../src/game/judge.js'
+import { battedFlight, clearsFence, meters, TIME_SCALE } from '../src/game/batted.js'
+import { chase } from '../src/game/fielder.js'
 
 const PITCH = { type: 'fastball', label: '직구', flightMs: 900, breakX: 0, breakY: 0 }
 const T0 = 1_000
@@ -49,14 +50,16 @@ describe('담장이 홈런을 가른다', () => {
     expect(swingWith(60).lastResult.result).toBe(HIT)
   })
 
-  it('타이밍이 퍼펙트여도 담장을 못 넘으면 안타다', () => {
+  it('타이밍이 퍼펙트여도 담장을 못 넘으면 홈런이 아니다', () => {
     // 낮은 공(lane 양수)은 각도가 깎여 담장에 못 미친다.
+    // 못 넘긴 뒤는 야수가 정한다 — 닿으면 아웃, 못 닿으면 안타.
     const low = startPitch(createGame(), { ...PITCH, lane: 0.06 }, T0)
     const hit = swing(low, low.plateAt + 32)
 
     expect(hit.lastResult.timing).toBe('perfect')
     expect(clearsFence(battedFlight(HIT, 32, 0.06))).toBe(false)
-    expect(hit.lastResult.result).toBe(HIT)
+    expect(hit.lastResult.result).not.toBe(HOMERUN)
+    expect([HIT, OUT]).toContain(hit.lastResult.result)
   })
 
   it('파울은 담장 쪽으로 가지도 않으니 홈런이 될 수 없다', () => {
@@ -219,5 +222,65 @@ describe('progress', () => {
 
   it('공이 없으면 0이다', () => {
     expect(progress(createGame(), T0)).toBe(0)
+  })
+})
+
+// ── 아웃 ──────────────────────────────────────────────────────────────────
+
+/** 야수에게 잡히는 타이밍 오차를 하나 찾아 둔다 — 상수를 조율해도 테스트가 안 깨진다. */
+function caughtErrorMs() {
+  for (let off = 1; off <= WINDOWS.good; off += 1) {
+    const flight = battedFlight(HIT, off, 0)
+    if (!flight.over && chase(flight)?.caught) return off
+  }
+  throw new Error('잡히는 타구가 하나도 없다 — fielder 상수를 다시 봐야 한다')
+}
+
+/** 야수가 못 닿는 오차. 이래야 안타로 남는다. */
+function safeErrorMs() {
+  for (let off = WINDOWS.good; off >= 1; off -= 1) {
+    const flight = battedFlight(HIT, off, 0)
+    if (!flight.over && !chase(flight)?.caught) return off
+  }
+  throw new Error('야수를 피하는 타구가 하나도 없다 — fielder 상수를 다시 봐야 한다')
+}
+
+describe('아웃', () => {
+  const off = caughtErrorMs()
+
+  it('담장을 못 넘기고 야수에게 닿은 타구는 아웃이다', () => {
+    expect(swingWith(off).lastResult.result).toBe(OUT)
+  })
+
+  it('아웃은 streak 을 올리지도 끊지도 않는다', () => {
+    expect(swingWith(off, { streak: 3 }).streak).toBe(3)
+  })
+
+  it('아웃은 안타로 세지 않는다', () => {
+    expect(swingWith(off).hits).toBe(0)
+  })
+
+  it('아웃도 최고 비거리를 갱신한다', () => {
+    expect(swingWith(off).bestMeters).toBeGreaterThan(0)
+  })
+
+  it('잡힌 공은 거기서 멈춘다 — 다 굴렀을 때보다 이르다', () => {
+    const s = swingWith(off)
+    const flight = battedFlight(HIT, off, 0)
+    const rolled = (flight.roll.startMs + flight.roll.durMs) / TIME_SCALE
+    const hung = chase(flight).hangMs / TIME_SCALE
+
+    expect(s.restAt - s.resultAt).toBeCloseTo(hung, 5)
+    expect(hung).toBeLessThan(rolled)
+  })
+
+  it('아웃 글씨도 잡히는 순간을 기준으로 뜬다', () => {
+    const s = swingWith(off)
+    const hung = chase(battedFlight(HIT, off, 0)).hangMs / TIME_SCALE
+    expect(s.outcomeEndsAt - s.resultAt).toBeCloseTo(hung + OUTCOME_MS, 5)
+  })
+
+  it('야수가 못 닿는 힘없는 타구는 안타로 남는다', () => {
+    expect(swingWith(safeErrorMs()).lastResult.result).toBe(HIT)
   })
 })
