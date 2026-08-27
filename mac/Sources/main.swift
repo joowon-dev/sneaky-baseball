@@ -78,6 +78,17 @@ private let holdPollInterval: TimeInterval = 1.0 / 60.0
 private let recordKey = "bestMeters"
 private let pitcherXKey = "pitcherX"
 private let defaultPitcherX = 0.87
+
+/// 트레이가 고르게 하는 투수 거리 단계. **값은 `src/game/pitches.js` 의
+/// `PITCHER_X_STEPS` 와 같아야 한다** — Swift 는 그 파일을 못 읽어서 손으로 맞춰 둔다.
+/// 당기면 공이 일찍 오고, 밀면 늦게 온다.
+private let pitcherSteps: [(x: Double, title: String)] = [
+    (0.81, "제일 가깝게"),
+    (0.84, "가깝게"),
+    (0.87, "기본"),
+    (0.90, "멀게"),
+    (0.93, "제일 멀게"),
+]
 private let batterKitKey = "batterKit"
 private let pitcherKitKey = "pitcherKit"
 private let controlKeyKey = "controlKey"
@@ -333,6 +344,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         menu.addItem(kitMenu(title: "타자 팀", who: "batter"))
         menu.addItem(kitMenu(title: "투수 팀", who: "pitcher"))
         menu.addItem(controlKeyMenu())
+        menu.addItem(pitcherMenu())
         if NSScreen.screens.count > 1 { menu.addItem(screenMenu()) }
         menu.addItem(.separator())
 
@@ -395,6 +407,37 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
     /// 팀만 바꾸고 홈·원정은 지금 고른 쪽을 유지한다.
     /// 「조작키 ▸」. 키보드마다 있는 키가 달라서 하나로 못 정한다 — 고르게 한다.
+    /// 「투수 거리 ▸」. 드래그와 같은 값을 본다 — 끌어서 옮기면 여기 체크도 따라온다.
+    /// 드래그는 연속값이라 단계와 정확히 안 맞을 수 있어 **가장 가까운 단계**에 찍는다.
+    private func pitcherMenu() -> NSMenuItem {
+        let current = pitcherX
+        let nearest = pitcherSteps.min { abs($0.x - current) < abs($1.x - current) }?.x
+
+        let submenu = NSMenu()
+        for step in pitcherSteps {
+            let item = NSMenuItem(title: step.title, action: #selector(pickPitcherX(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = step.x
+            item.state = step.x == nearest ? .on : .off
+            submenu.addItem(item)
+        }
+        let root = NSMenuItem(title: "투수 거리", action: nil, keyEquivalent: "")
+        root.submenu = submenu
+        return root
+    }
+
+    @objc private func pickPitcherX(_ sender: NSMenuItem) {
+        guard let x = sender.representedObject as? Double else { return }
+        setPitcherX(x)
+    }
+
+    /// 창이 숨어 있어도 밀어 넣는다 — 다시 띄웠을 때 이미 옮겨져 있어야 한다.
+    private func setPitcherX(_ x: Double) {
+        pitcherX = x
+        webView.evaluateJavaScript("window.__sneakyPitcherX && window.__sneakyPitcherX(\(x))")
+        refreshMenu()
+    }
+
     private func controlKeyMenu() -> NSMenuItem {
         let submenu = NSMenu()
         for key in ControlKey.allCases {
@@ -586,8 +629,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             return
         }
 
+        // 드래그로 놓은 값. 게임에 되밀 필요는 없고(이미 거기서 왔다) 메뉴 체크만 맞춘다.
         if body["type"] as? String == "pitcherX", let x = body["value"] as? Double {
             pitcherX = x
+            refreshMenu()
             return
         }
 

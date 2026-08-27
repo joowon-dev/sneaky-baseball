@@ -64,8 +64,22 @@ export function ballPosition(pitch, t) {
  * 밀어 두고 세운 기록이 판을 차지한다. **범위를 넓히려면 기록을 갈라야 한다.**
  */
 export const PITCHER_X_BASE = 0.87
-export const PITCHER_X_MIN = 0.78
+export const PITCHER_X_MIN = 0.81
 export const PITCHER_X_MAX = 0.93
+
+/**
+ * 트레이 메뉴가 고르게 하는 단계. 기본값이 정확히 가운데에 오도록 대칭으로 자른다.
+ * 드래그는 이 사이 아무 값이나 될 수 있다 — 단계에 붙여 버리면 끌 때 툭툭 걸려서
+ * 드래그의 맛이 죽는다. 메뉴의 체크 표시만 **가장 가까운 단계**에 찍는다.
+ * 셸은 자기 말로 이름을 붙이지만(Swift·C# 이라 이 파일을 못 읽는다) 값은 이게 기준이다.
+ */
+export const PITCHER_X_STEPS = [0.81, 0.84, 0.87, 0.90, 0.93]
+
+/** 지금 자리와 가장 가까운 단계. 메뉴 체크 표시에 쓴다. */
+export function nearestStep(x) {
+  const v = clampPitcherX(x)
+  return PITCHER_X_STEPS.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a))
+}
 
 /** 타격점과 릴리스 지점 — draw.js 의 geometry() 와 같은 식이다. */
 export const CONTACT_X = 0.215 // BATTER_X(0.19) + 0.025

@@ -56,6 +56,20 @@ sealed class OverlayContext : ApplicationContext
         ("kiwoom", "키움 히어로즈"),
     };
 
+    /// <summary>
+    /// 「투수 거리 ▸」가 고르게 하는 단계. <b>값은 src/game/pitches.js 의 PITCHER_X_STEPS 와
+    /// 같아야 한다</b> — C# 은 그 파일을 못 읽어서 손으로 맞춰 둔다.
+    /// 당기면 공이 일찍 오고, 밀면 늦게 온다.
+    /// </summary>
+    private static readonly (double X, string Title)[] PitcherSteps =
+    {
+        (0.81, "제일 가깝게"),
+        (0.84, "가깝게"),
+        (0.87, "기본"),
+        (0.90, "멀게"),
+        (0.93, "제일 멀게"),
+    };
+
     private static Icon LoadIcon()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "icon.ico");
@@ -72,11 +86,35 @@ sealed class OverlayContext : ApplicationContext
         menu.Items.Add(KitMenu("타자 팀", "batter"));
         menu.Items.Add(KitMenu("투수 팀", "pitcher"));
         menu.Items.Add(ControlKeyMenu());
+        menu.Items.Add(PitcherMenu());
         if (Screen.AllScreens.Length > 1) menu.Items.Add(ScreenMenu());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("숨기기 / 보이기  Ctrl+Shift+B", null, (_, _) => overlay.ToggleVisible()));
         menu.Items.Add(new ToolStripMenuItem("종료", null, (_, _) => Quit()));
         return menu;
+    }
+
+    /// <summary>
+    /// 「투수 거리 ▸」. 드래그와 같은 값을 본다 — 끌어서 옮기면 여기 체크도 따라온다.
+    /// 드래그는 연속값이라 단계와 정확히 안 맞을 수 있어 <b>가장 가까운 단계</b>에 찍는다.
+    /// </summary>
+    private ToolStripMenuItem PitcherMenu()
+    {
+        var root = new ToolStripMenuItem("투수 거리");
+        var current = overlay.PitcherX;
+        var nearest = PitcherSteps[0].X;
+        foreach (var step in PitcherSteps)
+            if (Math.Abs(step.X - current) < Math.Abs(nearest - current)) nearest = step.X;
+
+        foreach (var step in PitcherSteps)
+        {
+            var x = step.X;
+            root.DropDownItems.Add(new ToolStripMenuItem(step.Title, null, (_, _) => overlay.SetPitcherX(x))
+            {
+                Checked = x == nearest,
+            });
+        }
+        return root;
     }
 
     /// <summary>「조작키 ▸」. 키보드마다 있는 키가 달라서 하나로 못 정한다.</summary>
@@ -278,6 +316,22 @@ sealed class Overlay : Form
         ScreenName = deviceName;
         WriteState();
         Bounds = ChosenScreen().WorkingArea;
+        SettingsChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 트레이에서 고른 투수 거리. 창이 숨어 있어도 밀어 넣는다 —
+    /// 다시 띄웠을 때 이미 옮겨져 있어야 한다.
+    /// </summary>
+    public void SetPitcherX(double x)
+    {
+        PitcherX = x;
+        WriteState();
+        if (ready)
+        {
+            var v = x.ToString(CultureInfo.InvariantCulture);
+            _ = web.ExecuteScriptAsync($"window.__sneakyPitcherX && window.__sneakyPitcherX({v})");
+        }
         SettingsChanged?.Invoke();
     }
 
@@ -503,10 +557,12 @@ sealed class Overlay : Form
                 return;
             }
 
+            // 드래그로 놓은 값. 게임에 되밀 필요는 없고(이미 거기서 왔다) 메뉴 체크만 맞춘다.
             if (type == "pitcherX")
             {
                 PitcherX = body.GetProperty("value").GetDouble();
                 WriteState();
+                SettingsChanged?.Invoke();
                 return;
             }
 
