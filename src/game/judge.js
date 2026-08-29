@@ -4,12 +4,14 @@ export const WINDOWS = { perfect: 35, good: 80, foul: 150 }
 
 export const HOMERUN = 'homerun'
 export const HIT = 'hit'
+export const OUT = 'out'
 export const FOUL = 'foul'
 export const WHIFF = 'whiff'
 
 export const LABELS = {
   [HOMERUN]: 'HOME RUN!',
   [HIT]: '안타',
+  [OUT]: '아웃',
   [FOUL]: '파울',
   [WHIFF]: '헛스윙',
 }
@@ -20,6 +22,8 @@ export const LABELS = {
  *
  * 여기서는 **맞았는지(hit) / 파울인지 / 헛쳤는지**까지만 정한다.
  * 홈런은 타이밍이 아니라 **타구가 담장을 넘었는지**로 갈린다 — engine이 정한다.
+ * **아웃도 마찬가지다** — 궤적을 만들어 봐야 야수가 닿는지 알 수 있으므로
+ * 이 함수는 절대 OUT을 반환하지 않는다.
  */
 export function judgeSwing(swingMs, plateMs) {
   const errorMs = swingMs - plateMs

@@ -128,8 +128,11 @@ describe('바운드', () => {
     expect(second.vx).toBeGreaterThan(0)
   })
 
-  it('약하게 맞은 공은 세게 맞은 공보다 덜 튄다', () => {
-    expect(bounces(battedFlight(FOUL, 140))).toBeLessThan(bounces(inPark()))
+  it('약하게 맞은 공은 세게 맞은 공보다 덜 굴러 가까이 선다', () => {
+    // 예전엔 「덜 튄다」로 재던 성질인데, 그건 파울이 뒤로 절반 힘으로 나갈 때만
+    // 성립했다. 파울이 팝파울이 된 지금 페어 타구끼리는 튀는 횟수가 같으므로,
+    // 힘의 차이는 **얼마나 멀리 서느냐**로 잰다.
+    expect(travel(battedFlight(HIT, 78))).toBeLessThan(travel(inPark()))
   })
 
   it('타격점이 떠 있으면 그만큼 더 떨어져 땅에 닿는다', () => {
@@ -227,5 +230,32 @@ describe('담장', () => {
 
   it('파울은 뒤로 가니 담장과 무관하다', () => {
     expect(battedFlight(FOUL, 120).over).toBe(false)
+  })
+})
+
+describe('팝파울', () => {
+  const foul = () => battedFlight(FOUL, 100, 0)
+
+  it('파울은 거의 수직으로 솟는다', () => {
+    // 위로 가는 속도가 앞뒤로 가는 속도를 압도해야 「팝」 파울이다.
+    const f = foul()
+    expect(f.vy).toBeGreaterThan(Math.abs(f.vx) * 5)
+  })
+
+  it('파울은 눈에 띄게 높이 솟는다', () => {
+    // 최고 높이 = vy² / 2g. 세로 단위가 화면 높이라 0.35 면 화면의 35% 다.
+    const f = foul()
+    expect((f.vy * f.vy) / (2 * GRAVITY)).toBeGreaterThan(0.35)
+  })
+
+  it('파울은 화면 밖으로 밀려나지 않는다', () => {
+    // 예전엔 뒤로 0.5배 힘이라 타격점(화면 왼쪽 끝에서 50px)에서 뜨자마자 사라졌다.
+    expect(Math.abs(travel(foul()))).toBeLessThan(0.4)
+  })
+
+  it('안타 궤적은 그대로 낮게 뻗는다', () => {
+    const hit = battedFlight(HIT, 60, 0)
+    expect(hit.vx).toBeGreaterThan(0)
+    expect(hit.vy).toBeLessThan(hit.vx) // 32도 근처는 가로가 더 크다
   })
 })

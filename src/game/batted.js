@@ -23,7 +23,11 @@ const MIN_SPEED_RATIO = 0.35
 const POWER_CURVE = 1.25 // 클수록 완벽한 타이밍만 멀리 간다
 const DEG_PER_MS = 0.11 // 타이밍 1ms가 발사각을 바꾸는 정도
 const DEG_PER_LANE = 40 // 낮은 공일수록 각도가 깎인다
-const FOUL_SPEED_RATIO = -0.5 // 파울은 뒤로, 힘도 빠진다
+// 파울은 **거의 수직으로 솟는 팝파울**이다. 예전엔 뒤로 0.5배 힘으로 나갔는데,
+// 타격점이 화면 왼쪽 끝에서 50px밖에 안 떨어져 있어 뜨자마자 화면 밖으로 사라졌다 —
+// 파울이라는 결과가 화면에서 아무 일도 안 일으켰다.
+const FOUL_SPEED_RATIO = -0.06 // 파울이 뒤로 밀리는 정도. 화면에 남을 만큼만.
+const FOUL_DEG = 80 // 팝파울의 발사각. MAX_DEG 를 일부러 넘긴다.
 
 const BOUNCE = 0.42 // 땅에 부딪히고 남는 수직 속도
 // 튀고 구르는 거리를 바짝 줄인다 — 전체 거리의 91%가 날아간 거리(캐리)여야
@@ -70,7 +74,10 @@ export function battedFlight(result, errorMs, lane = 0, launchDy = LAUNCH_DY) {
   const speed = MAX_SPEED * (MIN_SPEED_RATIO + (1 - MIN_SPEED_RATIO) * power)
 
   // 빠르게 휘두르면 퍼올려 뜨고, 늦으면 낮게 깔린다.
-  const deg = clamp(LAUNCH_DEG - off * DEG_PER_MS - lane * DEG_PER_LANE, MIN_DEG, MAX_DEG)
+  // 파울만은 타이밍과 무관하게 팝파울이다 — 그래서 clamp 밖에 둔다.
+  const deg = result === FOUL
+    ? FOUL_DEG
+    : clamp(LAUNCH_DEG - off * DEG_PER_MS - lane * DEG_PER_LANE, MIN_DEG, MAX_DEG)
   const rad = (deg * Math.PI) / 180
 
   const vy = speed * Math.sin(rad)

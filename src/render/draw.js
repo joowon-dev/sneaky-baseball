@@ -10,9 +10,12 @@ import {
   battedFlight, battedBall, travel, FENCE_DIST, FENCE_H, LAUNCH_DY, TIME_SCALE,
 } from '../game/batted.js'
 import { READY, PITCHING, RESULT, RESULT_MS, OUTCOME_MS, progress } from '../game/engine.js'
-import { HOMERUN, FOUL, WHIFF, LABELS, WINDOWS } from '../game/judge.js'
+import { HOMERUN, OUT, FOUL, WHIFF, LABELS, WINDOWS } from '../game/judge.js'
+import { chase, START_X } from '../game/fielder.js'
+import { PITCHER_X_BASE } from '../game/pitches.js'
 import {
   drawFigure, batterStance, batterSwing, pitcherWindup, pitcherRelease,
+  fielderStand, fielderRun, fielderCatch,
 } from './sprites.js'
 
 // 투명한 배경 위 검은 실루엣. 어두운 앱 위에서도 읽히도록 흰 번짐을 깔고 그린다.
@@ -30,7 +33,10 @@ const BALL_SEAM_MIN = 4     // 이보다 작으면 실밥 선이 공을 다 먹�
 // 필드 좌표는 0..1 비율. x는 왼쪽(백네트)에서 오른쪽(외야)으로.
 const GROUND_Y = 0.92
 const BATTER_X = 0.19
-const PITCHER_X = 0.87
+// 투수 X 는 pitches.js 가 갖는다 — 플레이어가 드래그로 옮기면 판정(투구 시간)에
+// 들어가는 값이 되므로, 그림 상수가 아니라 순수 모듈의 값이다.
+const CATCH_HOLD_MS = 600 // 잡은 자세를 유지하는 시간 (궤적 시간 기준)
+const FIELDER_H = 0.92 // 외야수 키 — 투수 대비. 조금 작아야 멀리 있는 티가 난다.
 const BATTER_H = 0.62
 const PITCHER_H = 0.5
 
@@ -46,8 +52,14 @@ const MARGIN_Y = 8
 // 담장 거리·높이는 판정 기준이라 batted.js가 갖고 있다 — 그래서 보이는 대로 판정된다.
 const FENCE_EDGE = 0.97
 
-// 공 뒤에 남는 잔상의 길이 (궤적 시간 기준). 점이 아니라 한 줄로 잇는다.
-const TRAIL_MS = 130
+/**
+ * 공 뒤에 남는 잔상의 길이 (궤적 시간 기준). 점이 아니라 한 줄로 잇는다.
+ * **결과마다 다르다.** 홈런만 길다 — 짧은 꼬리로는 공만 보이고 포물선이 안 보여서
+ * 「작업 중인 창 위로 포물선을 그리며 날아간다」가 화면에 나타나지 않았다.
+ * 파울은 아예 없다 — 헛스윙 다음으로 흔한 결과라 조용해야 한다.
+ */
+const TRAIL_MS = { [HOMERUN]: 500, [FOUL]: 0, default: 130 }
+const trailOf = (result) => TRAIL_MS[result] ?? TRAIL_MS.default
 
 // 결과 글씨가 사라지는 데 걸리는 시간. 떠 있는 총 시간은 engine의 OUTCOME_MS —
 // 그 글씨가 사라져야 다음 공이 오므로 투구 간격과 같은 값을 봐야 한다.
@@ -86,23 +98,33 @@ function metrics(height) {
   }
 }
 
-/** 화면 왼쪽 아래에 붙는 필드 상자. */
-function layout(width, height) {
+/**
+ * 화면 왼쪽 아래에 붙는 필드 상자.
+ * **높이는 고르지 않고 물리에서 역산한다** — app.js 의 드래그도 같은 상자를 봐야
+ * 하므로 여기서 내보낸다. 두 곳이 따로 계산하면 잡히는 자리가 어긋난다.
+ */
+export function layout(width, height) {
   const w = Math.min(FIELD_W, width - MARGIN_X * 2)
   const h = clamp((LAUNCH_DY * height) / CONTACT_ABOVE_GROUND, 48, height * 0.4)
   return { x: MARGIN_X, y: height - MARGIN_Y - h, w, h }
 }
 
-export function draw(ctx, width, height, state, now, kits = NO_KITS) {
+export function draw(
+  ctx, width, height, state, now,
+  kits = NO_KITS, pitcherX = PITCHER_X_BASE, grabbable = false,
+) {
   ctx.clearRect(0, 0, width, height)
 
   const field = layout(width, height)
   const ui = metrics(field.h)
-  const spot = geometry(field)
+  const spot = geometry(field, pitcherX)
   const space = flightSpace(field, spot, width, height)
+  const flight = flightOf(state)
 
   // 지면과 담장은 타구가 지나가는 범위 전체에 걸친다 — 화면 좌표.
   drawGround(ctx, field, spot, ui, space)
+  // 야수도 상자 밖, 그 지면선 위에 선다.
+  drawFielder(ctx, spot, ui, space, state, now, kits, flight)
 
   ctx.save()
   ctx.translate(field.x, field.y)
@@ -111,7 +133,8 @@ export function draw(ctx, width, height, state, now, kits = NO_KITS) {
 
   drawScore(ctx, field, ui, state)
   drawContactMark(ctx, spot, ui, state, now)
-  drawPeople(ctx, field, spot, ui, state, now, kits)
+  drawPeople(ctx, field, spot, ui, state, now, kits, pitcherX)
+  if (grabbable) drawGrabHint(ctx, field, spot, ui, pitcherX)
 
   // 안 친 공은 결과가 난 뒤에도 계속 날아가 뒤로 빠진다.
   const missed = state.phase === RESULT && state.lastResult?.result === WHIFF
@@ -124,9 +147,7 @@ export function draw(ctx, width, height, state, now, kits = NO_KITS) {
   ctx.restore()
 
   // 맞은 공만 상자 밖 — 화면 전체를 쓴다. 페이즈와 무관하게 제 수명만큼 굴러간다.
-  if (state.lastResult) {
-    const { result, errorMs, lane } = state.lastResult
-    const flight = battedFlight(result, errorMs, lane ?? 0)
+  if (flight) {
     drawFlight(ctx, field, spot, ui, space, state, now, flight)
     drawOutcome(ctx, space, ui, state, now, flight)
   }
@@ -152,7 +173,7 @@ function flightSpace(field, spot, screenW, screenH) {
 }
 
 /** 필드 비율을 픽셀 좌표로 한 번에 풀어둔다. */
-function geometry(field) {
+function geometry(field, pitcherX) {
   const ground = field.h * GROUND_Y
   const batterH = field.h * BATTER_H
   const pitcherH = field.h * PITCHER_H
@@ -162,7 +183,7 @@ function geometry(field) {
     batterH,
     pitcherH,
     contact: { x: field.w * (BATTER_X + 0.025), y: ground - batterH * 0.52 },
-    release: { x: field.w * (PITCHER_X - 0.06), y: ground - pitcherH * 0.88 },
+    release: { x: field.w * (pitcherX - 0.06), y: ground - pitcherH * 0.88 },
   }
 }
 
@@ -224,7 +245,83 @@ function drawContactMark(ctx, spot, ui, state, now) {
   ctx.restore()
 }
 
-function drawPeople(ctx, field, spot, ui, state, now, kits) {
+/**
+ * 잡을 수 있다는 표시. 커서가 투수 위에 왔을 때만 뜬다(앱에서는 수식키를 누른
+ * 동안에만 커서가 닿는다) — 이게 없으면 투수를 옮길 수 있다는 걸 알 길이 없다.
+ */
+function drawGrabHint(ctx, field, spot, ui, pitcherX) {
+  const x = field.w * pitcherX
+  const y = spot.ground + ui.tick * 0.8
+  const arm = ui.tick * 1.6
+  const head = ui.k * 3
+
+  ctx.save()
+  ctx.shadowColor = HALO
+  ctx.shadowBlur = ui.glow
+  ctx.strokeStyle = INK
+  ctx.lineWidth = Math.max(1, ui.k)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  ctx.beginPath()
+  ctx.moveTo(x - arm, y)
+  ctx.lineTo(x + arm, y)
+  // 양끝 화살촉 — 좌우로 움직인다는 뜻이다.
+  ctx.moveTo(x - arm + head, y - head)
+  ctx.lineTo(x - arm, y)
+  ctx.lineTo(x - arm + head, y + head)
+  ctx.moveTo(x + arm - head, y - head)
+  ctx.lineTo(x + arm, y)
+  ctx.lineTo(x + arm - head, y + head)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/**
+ * 지금 굴러가는 타구의 궤적. 없으면 null.
+ * 한 프레임에 여러 곳이 이 값을 보므로 draw() 가 한 번만 만들어 돌린다.
+ */
+function flightOf(state) {
+  if (!state.lastResult) return null
+  const { result, errorMs, lane } = state.lastResult
+  return battedFlight(result, errorMs, lane ?? 0)
+}
+
+/**
+ * 외야수. 타구가 뜨면 낙구 지점으로 달려가고, 닿으면 잡는다.
+ * **판정에 쓴 값을 그대로 그린다** — 여기서 물리를 다시 풀지 않는다.
+ * 담장·지면과 마찬가지로 필드 상자 밖, 화면 좌표에 선다.
+ */
+function drawFielder(ctx, spot, ui, space, state, now, kits, flight) {
+  const run = flight ? chase(flight) : null
+
+  let x = START_X
+  let pose = fielderStand
+
+  if (run) {
+    const age = (now - state.resultAt) * TIME_SCALE
+    if (age > 0) {
+      // 낙구 지점까지 needMs 동안 달린다. 도착하면 거기 서 있는다.
+      const t = run.needMs > 0 ? clamp(age / run.needMs, 0, 1) : 1
+      x = START_X + (run.spotX - START_X) * t
+      if (t < 1) pose = fielderRun
+      else if (run.caught && age >= run.hangMs && age < run.hangMs + CATCH_HOLD_MS) pose = fielderCatch
+    }
+  }
+
+  drawFigure(
+    ctx,
+    pose,
+    space.origin.x + x * space.unitX,
+    space.ground,
+    spot.pitcherH * FIELDER_H,
+    1,
+    ui.glow,
+    kits.pitcher,
+  )
+}
+
+function drawPeople(ctx, field, spot, ui, state, now, kits, pitcherX) {
   // 타자는 오른쪽(투수)을 본다 — 그래서 좌우 반전.
   const swung = state.phase === RESULT && state.lastResult?.timing !== 'take'
   const recovered = swung && now - state.resultAt > RESULT_MS
@@ -234,7 +331,7 @@ function drawPeople(ctx, field, spot, ui, state, now, kits) {
 
   const throwing = state.phase === PITCHING
   const pitcher = throwing ? pitcherRelease : pitcherWindup
-  drawFigure(ctx, pitcher, field.w * PITCHER_X, spot.ground, spot.pitcherH, 1, ui.glow, kits.pitcher)
+  drawFigure(ctx, pitcher, field.w * pitcherX, spot.ground, spot.pitcherH, 1, ui.glow, kits.pitcher)
 }
 
 function ball(ctx, x, y, r, ui, alpha = 1) {
@@ -293,12 +390,11 @@ function drawPitchedBall(ctx, field, spot, ui, state, now) {
  * 결과 뒤의 공 — 맞았으면 화면 좌표의 포물선, 헛스윙이면 포수 미트로.
  * 화면 좌표로 그리므로 필드 상자를 벗어나 작업 중인 창 위를 가로지른다.
  */
-function drawFlight(ctx, field, spot, ui, space, state, now) {
-  const age = now - state.resultAt
-  const { result, errorMs, lane } = state.lastResult
-  const flight = battedFlight(result, errorMs, lane ?? 0)
-
+function drawFlight(ctx, field, spot, ui, space, state, now, flight) {
   if (!flight) return // 헛친 공은 투구 궤적을 따라 그대로 뒤로 빠진다
+
+  const age = now - state.resultAt
+  const { result } = state.lastResult
 
   // 궤적 상의 시각. 실제로 흐른 시간보다 느리게 간다.
   const flightAge = age * TIME_SCALE
@@ -307,17 +403,24 @@ function drawFlight(ctx, field, spot, ui, space, state, now) {
     return p && { x: space.origin.x + p.dx * space.unitX, y: space.origin.y - p.dy * space.unitY }
   }
 
+  // 잡힌 공은 야수 글러브 안에서 멈춘다 — 홈런이 담장을 넘으며 끝나는 것과 같다.
+  const caught = result === OUT ? chase(flight) : null
+  const endMs = caught ? caught.hangMs : Infinity
+  const shownAge = Math.min(flightAge, endMs)
+
   // 다 구르고 멈춘 공은 그 자리에서 서서히 사라진다.
   const fade = clamp((flight.lifeMs - flightAge) / flight.fadeMs, 0, 1)
 
-  drawTrail(ctx, at, flightAge, ui, fade)
+  drawTrail(ctx, at, shownAge, ui, fade, trailOf(result))
 
-  const head = at(flightAge)
-  if (head) ball(ctx, head.x, head.y, ui.ballR, ui, fade)
+  const head = at(shownAge)
+  if (head && flightAge <= endMs + 1) ball(ctx, head.x, head.y, ui.ballR, ui, fade)
 }
 
 /** 공이 지나온 자리를 한 줄로 잇는다. 점을 띄엄띄엄 찍으면 공이 여러 개로 보인다. */
-function drawTrail(ctx, at, flightAge, ui, fade) {
+function drawTrail(ctx, at, flightAge, ui, fade, trailMs) {
+  if (trailMs <= 0) return // 파울은 잔상을 안 남긴다 — 흔한 결과라 조용해야 한다
+
   ctx.save()
   ctx.globalAlpha = 0.22 * fade
   ctx.strokeStyle = INK
@@ -329,7 +432,7 @@ function drawTrail(ctx, at, flightAge, ui, fade) {
 
   ctx.beginPath()
   let started = false
-  for (let back = TRAIL_MS; back > 0; back -= 8) {
+  for (let back = trailMs; back > 0; back -= 8) {
     const p = at(flightAge - back)
     if (!p) continue
     if (started) ctx.lineTo(p.x, p.y)
@@ -405,8 +508,13 @@ function drawOutcome(ctx, space, ui, state, now, flight) {
   if (result === WHIFF || !flight) return
 
   const homer = result === HOMERUN
-  // 홈런은 담장을 넘는 순간, 나머지는 다 굴러 멈추는 순간.
-  const atMs = homer ? flight.overAtMs : flight.roll.startMs + flight.roll.durMs
+  const caught = result === OUT ? chase(flight) : null
+  // 홈런은 담장을 넘는 순간, 아웃은 잡히는 순간, 나머지는 다 굴러 멈추는 순간.
+  const atMs = homer
+    ? flight.overAtMs
+    : caught
+      ? caught.hangMs
+      : flight.roll.startMs + flight.roll.durMs
   const age = (now - state.resultAt) * TIME_SCALE - atMs
   if (age < 0) return
 
@@ -415,7 +523,11 @@ function drawOutcome(ctx, space, ui, state, now, flight) {
 
   const spot = homer
     ? { x: space.fenceX, y: space.ground - FENCE_H * space.unitY - ui.label * 1.4 }
-    : { x: space.origin.x + travel(flight) * space.unitX, y: space.ground - ui.label * 1.2 }
+    : {
+        // 아웃은 잡힌 자리에, 안타·파울은 공이 멈춘 자리에.
+        x: space.origin.x + (caught ? caught.spotX : travel(flight)) * space.unitX,
+        y: space.ground - ui.label * 1.2,
+      }
 
   // 파울처럼 뒤로 간 공은 화면 밖에 설 수 있다. 글씨만은 화면 안에 붙잡아 둔다.
   const edge = ui.label * 3

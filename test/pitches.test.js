@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { speedFactor, curveRatio, nextPitch, ballPosition, FASTBALL, CURVE } from '../src/game/pitches.js'
+import {
+  speedFactor, curveRatio, nextPitch, ballPosition, FASTBALL, CURVE,
+  PITCHER_X_BASE, PITCHER_X_MIN, PITCHER_X_MAX, PITCHER_X_STEPS,
+  clampPitcherX, distanceRatio, nearestStep,
+} from '../src/game/pitches.js'
 
 /** 정해진 값들을 순서대로 내주는 가짜 난수. */
 function fakeRand(...values) {
@@ -92,5 +96,68 @@ describe('ballPosition', () => {
 
   it('타격점을 지나면 더 휘지는 않는다', () => {
     expect(ballPosition(curve, 1.3).offset).toBeCloseTo(ballPosition(curve, 1).offset)
+  })
+})
+
+describe('투수 위치', () => {
+  it('기본 자리는 거리 비율이 1이다', () => {
+    expect(distanceRatio(PITCHER_X_BASE)).toBeCloseTo(1)
+  })
+
+  it('당기면 공이 일찍 오고, 밀면 늦게 온다', () => {
+    expect(distanceRatio(PITCHER_X_MIN)).toBeLessThan(1)
+    expect(distanceRatio(PITCHER_X_MAX)).toBeGreaterThan(1)
+  })
+
+  it('범위는 좁다 — 기록이 하나뿐이라 넓히면 왜곡된다', () => {
+    expect(distanceRatio(PITCHER_X_MIN)).toBeGreaterThan(0.8)
+    expect(distanceRatio(PITCHER_X_MAX)).toBeLessThan(1.2)
+  })
+
+  it('범위 밖은 잘라 낸다', () => {
+    expect(clampPitcherX(0)).toBe(PITCHER_X_MIN)
+    expect(clampPitcherX(2)).toBe(PITCHER_X_MAX)
+    expect(clampPitcherX(PITCHER_X_BASE)).toBe(PITCHER_X_BASE)
+    expect(clampPitcherX(NaN)).toBe(PITCHER_X_BASE)
+    expect(clampPitcherX(undefined)).toBe(PITCHER_X_BASE)
+  })
+
+  it('거리 비율이 날아오는 시간에 그대로 반영된다', () => {
+    const base = nextPitch(0, fakeRand(0.9, 0.5))
+    const near = nextPitch(0, fakeRand(0.9, 0.5), 0.85)
+    expect(near.flightMs).toBe(Math.round(base.flightMs * 0.85))
+  })
+
+  it('비율을 안 주면 지금과 같다', () => {
+    expect(nextPitch(0, fakeRand(0.9, 0.5)).flightMs)
+      .toBe(nextPitch(0, fakeRand(0.9, 0.5), 1).flightMs)
+  })
+})
+
+describe('트레이가 고르는 단계', () => {
+  it('양 끝이 범위와 같다', () => {
+    expect(PITCHER_X_STEPS[0]).toBe(PITCHER_X_MIN)
+    expect(PITCHER_X_STEPS.at(-1)).toBe(PITCHER_X_MAX)
+  })
+
+  it('기본값이 정확히 가운데 단계다', () => {
+    expect(PITCHER_X_STEPS[(PITCHER_X_STEPS.length - 1) / 2]).toBe(PITCHER_X_BASE)
+  })
+
+  it('단계 간격이 고르다', () => {
+    const gaps = PITCHER_X_STEPS.slice(1).map((v, i) => +(v - PITCHER_X_STEPS[i]).toFixed(4))
+    expect(new Set(gaps).size).toBe(1)
+  })
+
+  it('범위가 기본값을 중심으로 대칭이다', () => {
+    expect(distanceRatio(PITCHER_X_MIN) + distanceRatio(PITCHER_X_MAX)).toBeCloseTo(2)
+  })
+
+  it('가장 가까운 단계를 찾는다 — 드래그한 값은 단계 사이에 있을 수 있다', () => {
+    expect(nearestStep(0.87)).toBe(0.87)
+    expect(nearestStep(0.853)).toBe(0.84)
+    expect(nearestStep(0.862)).toBe(0.87)
+    expect(nearestStep(0)).toBe(PITCHER_X_MIN)
+    expect(nearestStep(9)).toBe(PITCHER_X_MAX)
   })
 })
