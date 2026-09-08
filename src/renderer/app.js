@@ -8,6 +8,8 @@ import { draw, layout, setKeyHint } from '../render/draw.js'
 import { kitOf } from '../render/teams.js'
 import { batOf } from '../game/gear.js'
 import { createWallet, earn, teamIdOf, powerMul as walletPowerMul } from '../game/wallet.js'
+import { pendingDeltas, hasPending, mergeSent, newSecret, defaultNickname } from '../game/sync.js'
+import { registerPlayer, submitCheer, randomBytes } from '../net/ranking.js'
 
 const RECORD_KEY = 'sneaky-baseball:record'
 const PITCHER_KEY = 'sneaky-baseball:pitcherX'
@@ -29,6 +31,11 @@ let kitKeys = { batter: null, pitcher: null }
 let wallet = createWallet()
 // 이미 점수를 준 타구. 결과 객체는 칠 때마다 새로 만들어지므로 같은 것인지로 가린다.
 let lastAwarded = null
+// 랭킹 신분과 「지금까지 보낸 몫」. 셸이 저장하고, 여기서는 보낼 때만 쓴다.
+let account = null
+let cheerSent = {}
+// 한 번에 하나만 올린다 — 겹쳐 보내면 같은 몫이 두 번 갈 수 있다.
+let syncing = false
 // 투수가 선 자리. 드래그로 옮기면 던지는 거리가 바뀌고 공이 오는 시간도 바뀐다.
 let pitcherX = PITCHER_X_BASE
 // 드래그 중인가 / 커서가 투수 위에 있나. 뒤엣것은 「잡을 수 있다」 표시에만 쓴다.
@@ -63,11 +70,48 @@ function setKit(who, key) {
 function setWallet(next) {
   wallet = createWallet(next)
   state = setPowerMul(state, walletPowerMul(wallet))
+  // 랭킹에 쓰는 것들은 지갑과 같은 상자에 실려 온다.
+  if (next?.account?.playerId && next.account.secret) account = next.account
+  if (next?.cheerSent) cheerSent = { ...next.cheerSent }
+}
+
+/**
+ * 쌓인 응원을 서버로 올린다. **총량이 아니라 델타**를 올리고, 성공했을 때만 옮겨 적는다.
+ *
+ * 실패는 조용히 삼킨다 — 랭킹이 안 되는 것과 게임이 안 되는 것은 다른 일이다.
+ * 다음 차례에 그대로 다시 올라간다.
+ */
+async function syncCheer() {
+  if (syncing || !hasPending(wallet.cheer, cheerSent)) return
+  syncing = true
+
+  try {
+    // 처음 올리는 순간에 신분을 만든다. 안 치는 사람은 서버에 흔적조차 안 남는다.
+    if (!account) {
+      const secret = newSecret(randomBytes)
+      const nickname = defaultNickname(randomBytes)
+      const playerId = await registerPlayer(nickname, secret)
+      account = { playerId, secret, nickname }
+      window.sneaky?.saveAccount?.({ ...account, cheerSent })
+    }
+
+    const deltas = pendingDeltas(wallet.cheer, cheerSent)
+    await submitCheer(account.playerId, account.secret, deltas)
+
+    // 보내는 사이에 더 친 몫은 다음 차례에 간다 — 그래서 cheer 를 복사하지 않고 델타만 더한다.
+    cheerSent = mergeSent(cheerSent, deltas)
+    window.sneaky?.saveSynced?.(cheerSent)
+    if (!window.sneaky) persistWallet()
+  } catch {
+    // 다음 차례에 다시 올린다.
+  } finally {
+    syncing = false
+  }
 }
 
 function persistWallet() {
   try {
-    localStorage.setItem(WALLET_KEY, JSON.stringify(wallet))
+    localStorage.setItem(WALLET_KEY, JSON.stringify({ ...wallet, account, cheerSent }))
   } catch {
     // 저장에 실패해도 게임은 계속된다.
   }
@@ -306,5 +350,11 @@ async function boot() {
   resize()
   requestAnimationFrame(frame)
 }
+
+// 5분마다 올린다. 홈런마다 보내면 네트워크가 눈에 띈다 — 몰래 하는 앱이 몰래 하지 못하게 된다.
+const SYNC_EVERY_MS = 5 * 60 * 1000
+setInterval(syncCheer, SYNC_EVERY_MS)
+// 처음 한 번은 조금 일찍 — 켜자마자 끄는 사람의 기록도 남아야 한다.
+setTimeout(syncCheer, 30 * 1000)
 
 boot()

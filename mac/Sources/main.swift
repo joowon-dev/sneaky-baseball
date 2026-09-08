@@ -96,6 +96,13 @@ private let ownedKey = "ownedBats"
 private let equippedKey = "equippedBat"
 private let cheerKey = "cheer"
 private let defaultBat = "bare"
+/// 랭킹에 쓰는 신분. 계정이 아니라 **기기가 만든 무작위 한 쌍**이다 —
+/// 이메일도 비밀번호도 없고, 둘을 이어 붙인 것이 사용자가 보는 「복구 코드」다.
+private let playerIdKey = "playerId"
+private let playerSecretKey = "playerSecret"
+private let nicknameKey = "nickname"
+/// 지금까지 서버에 보낸 몫. 응원 원장에서 이만큼을 뺀 것이 다음에 올릴 델타다.
+private let cheerSentKey = "cheerSent"
 private let batterKitKey = "batterKit"
 private let pitcherKitKey = "pitcherKit"
 private let controlKeyKey = "controlKey"
@@ -231,12 +238,40 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         set { UserDefaults.standard.set(newValue, forKey: cheerKey) }
     }
 
+    /// 랭킹 신분. 아직 등록하기 전이면 비어 있다.
+    private var playerId: String? {
+        get { UserDefaults.standard.string(forKey: playerIdKey) }
+        set { UserDefaults.standard.set(newValue, forKey: playerIdKey) }
+    }
+
+    private var playerSecret: String? {
+        get { UserDefaults.standard.string(forKey: playerSecretKey) }
+        set { UserDefaults.standard.set(newValue, forKey: playerSecretKey) }
+    }
+
+    private var nickname: String? {
+        get { UserDefaults.standard.string(forKey: nicknameKey) }
+        set { UserDefaults.standard.set(newValue, forKey: nicknameKey) }
+    }
+
+    private var cheerSent: [String: Int] {
+        get { UserDefaults.standard.dictionary(forKey: cheerSentKey) as? [String: Int] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: cheerSentKey) }
+    }
+
     /// 두 창에 실어 보낼 지갑. **손으로 조립하지 않고 직렬화한다** — 따옴표가 하나만 새도
     /// window.sneaky 가 통째로 안 만들어지고, 게임은 조용히 핫키까지 잃는다.
     private func gearJSON() -> String {
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "points": points, "owned": ownedBats, "equipped": equippedBat, "cheer": cheer,
+            "cheerSent": cheerSent,
         ]
+        // 랭킹 신분은 있을 때만 싣는다. 없으면 게임이 처음 보낼 때 만든다.
+        if let playerId, let playerSecret {
+            payload["account"] = [
+                "playerId": playerId, "secret": playerSecret, "nickname": nickname ?? "",
+            ]
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let text = String(data: data, encoding: .utf8)
         else { return "{}" }
@@ -418,6 +453,13 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             type: 'equip', key,
           }),
           onGear: (handler) => { window.__sneakyGear = handler },
+          saveAccount: (a) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'account', playerId: a.playerId, secret: a.secret,
+            nickname: a.nickname, cheerSent: a.cheerSent,
+          }),
+          saveSynced: (sent) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'synced', cheerSent: sent,
+          }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
@@ -757,6 +799,26 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         if body["type"] as? String == "pitcherX", let x = body["value"] as? Double {
             pitcherX = x
             refreshMenu()
+            return
+        }
+
+        // 랭킹 신분을 처음 만들었거나(등록) 복구 코드로 바꿔 넣었을 때.
+        if body["type"] as? String == "account" {
+            guard let id = body["playerId"] as? String, let secret = body["secret"] as? String,
+                  !id.isEmpty, !secret.isEmpty
+            else { return }
+            playerId = id
+            playerSecret = secret
+            nickname = body["nickname"] as? String
+            // 복구 코드로 다른 기기의 기록을 이어받으면, 여기서 쌓인 응원은 아직 안 보낸 것으로 친다.
+            if let sent = body["cheerSent"] as? [String: Int] { cheerSent = sent }
+            pushGear()
+            return
+        }
+
+        // 서버에 올리기가 성공했다. 보낸 만큼만 옮겨 적는다.
+        if body["type"] as? String == "synced", let sent = body["cheerSent"] as? [String: Int] {
+            cheerSent = sent
             return
         }
 

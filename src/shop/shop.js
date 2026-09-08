@@ -10,6 +10,10 @@ import { battedFlight, meters, LAUNCH_DY } from '../game/batted.js'
 import { HIT } from '../game/judge.js'
 import { drawFigure, batterStance } from '../render/sprites.js'
 import { kitOf, TEAMS } from '../render/teams.js'
+import { recoveryCode, parseRecoveryCode } from '../game/sync.js'
+import {
+  PERIODS, teamRanking, playerRanking, myStanding, setNickname, submitCheer,
+} from '../net/ranking.js'
 
 const WALLET_KEY = 'sneaky-baseball:wallet'
 
@@ -19,6 +23,12 @@ const batsEl = document.getElementById('bats')
 
 let wallet = createWallet()
 let kit = null
+// 랭킹 신분. 아직 한 번도 안 올렸으면 null 이다 — 안 치는 사람은 서버에 흔적조차 없다.
+let account = null
+// 지금까지 서버에 보낸 몫. 이어받기를 할 때 이 값을 다시 적어 준다.
+let cheerSent = {}
+let period = 'day'
+let loadingRank = false
 
 const teamName = (id) => TEAMS.find((t) => t.id === id)?.name ?? id
 const won = (n) => n.toLocaleString('en-US')
@@ -141,7 +151,10 @@ function preview(canvas, bat) {
 
 function setWallet(next) {
   wallet = createWallet(next)
+  if (next?.account?.playerId) account = next.account
+  if (next?.cheerSent) cheerSent = { ...next.cheerSent }
   render()
+  renderAccount()
 }
 
 function doBuy(bat) {
@@ -166,6 +179,167 @@ function save() {
     // 저장에 실패해도 상점은 열린다.
   }
 }
+
+// ── 랭킹 ────────────────────────────────────────────────────────────────────
+//
+// 서버가 하는 일은 집계뿐이다. 여기서는 기간을 골라 두 표를 받아 그린다.
+// 실패는 화면에 한 줄로만 말한다 — 랭킹이 안 되는 것과 상점이 안 되는 것은 다른 일이다.
+
+const rankEl = document.getElementById('rank')
+const batsView = document.getElementById('bats')
+const periodsEl = document.getElementById('periods')
+const teamRankEl = document.getElementById('team-rank')
+const playerRankEl = document.getElementById('player-rank')
+const myStandingEl = document.getElementById('my-standing')
+const nicknameEl = document.getElementById('nickname')
+const nicknameMsgEl = document.getElementById('nickname-msg')
+const codeEl = document.getElementById('code')
+const restoreEl = document.getElementById('restore')
+const restoreMsgEl = document.getElementById('restore-msg')
+
+function showView(name) {
+  const bats = name === 'bats'
+  batsView.hidden = !bats
+  rankEl.hidden = bats
+  for (const button of document.querySelectorAll('#tabs button')) {
+    button.classList.toggle('on', button.dataset.view === name)
+  }
+  if (!bats) loadRanking()
+}
+
+document.getElementById('tabs').addEventListener('click', (event) => {
+  const view = event.target.dataset?.view
+  if (view) showView(view)
+})
+
+function renderPeriods() {
+  periodsEl.replaceChildren(...PERIODS.map(({ key, label }) => {
+    const el = document.createElement('button')
+    el.type = 'button'
+    el.textContent = label
+    el.className = key === period ? 'on' : ''
+    el.addEventListener('click', () => {
+      period = key
+      renderPeriods()
+      loadRanking()
+    })
+    return el
+  }))
+}
+
+function row(no, name, points, mine = false) {
+  const li = document.createElement('li')
+  if (mine) li.className = 'me'
+  const rank = document.createElement('span')
+  rank.className = 'no'
+  rank.textContent = no
+  const who = document.createElement('span')
+  who.textContent = name
+  const pt = document.createElement('span')
+  pt.className = 'pt'
+  pt.textContent = `${won(points)}P`
+  li.append(rank, who, pt)
+  return li
+}
+
+function emptyRow(text) {
+  const li = document.createElement('li')
+  const span = document.createElement('span')
+  span.className = 'empty'
+  span.textContent = text
+  li.append(span)
+  return li
+}
+
+async function loadRanking() {
+  if (loadingRank) return
+  loadingRank = true
+  teamRankEl.replaceChildren(emptyRow('불러오는 중…'))
+  playerRankEl.replaceChildren(emptyRow('불러오는 중…'))
+
+  try {
+    const [teams, players, mine] = await Promise.all([
+      teamRanking(period),
+      playerRanking(period, 20),
+      account ? myStanding(account.playerId, period) : Promise.resolve(null),
+    ])
+
+    teamRankEl.replaceChildren(...(teams?.length
+      ? teams.map((t, i) => row(i + 1, teamName(t.team), t.points))
+      : [emptyRow('아직 아무도 안 쳤습니다')]))
+
+    playerRankEl.replaceChildren(...(players?.length
+      ? players.map((p) => row(p.rank, p.nickname, p.points, p.player_id === account?.playerId))
+      : [emptyRow('아직 아무도 안 쳤습니다')]))
+
+    const standing = mine?.[0]
+    myStandingEl.textContent = standing && standing.rank > 0
+      ? `내 자리 — ${standing.rank}위 / ${standing.total_players}명 · ${won(standing.points)}P`
+      : '아직 이 기간에 올린 응원이 없습니다.'
+  } catch {
+    teamRankEl.replaceChildren(emptyRow('랭킹을 못 불러왔습니다'))
+    playerRankEl.replaceChildren(emptyRow('잠시 뒤 다시 열어 주세요'))
+    myStandingEl.textContent = ''
+  } finally {
+    loadingRank = false
+  }
+}
+
+function renderAccount() {
+  nicknameEl.value = account?.nickname ?? ''
+  codeEl.textContent = account
+    ? recoveryCode(account.playerId, account.secret)
+    : '아직 랭킹에 오르지 않았습니다 — 안타를 치면 5분 안에 올라갑니다'
+}
+
+function say(el, text, bad = false) {
+  el.textContent = text
+  el.className = bad ? 'msg bad' : 'msg'
+}
+
+document.getElementById('save-nickname').addEventListener('click', async () => {
+  if (!account) {
+    say(nicknameMsgEl, '안타를 한 번 치고 나면 이름을 정할 수 있습니다', true)
+    return
+  }
+  const name = nicknameEl.value.trim()
+  try {
+    await setNickname(account.playerId, account.secret, name)
+    account = { ...account, nickname: name }
+    window.sneaky?.saveAccount?.({ ...account, cheerSent })
+    say(nicknameMsgEl, '바꿨습니다')
+    loadRanking()
+  } catch (error) {
+    const reason = String(error)
+    say(nicknameMsgEl, reason.includes('nickname_taken') ? '이미 있는 이름입니다'
+      : reason.includes('invalid_nickname') ? '한글·영문·숫자 12자까지'
+        : '바꾸지 못했습니다', true)
+  }
+})
+
+document.getElementById('do-restore').addEventListener('click', async () => {
+  const parsed = parseRecoveryCode(restoreEl.value)
+  if (!parsed) {
+    say(restoreMsgEl, '코드 모양이 아닙니다', true)
+    return
+  }
+  try {
+    // 빈 델타를 올려 신분만 확인한다. 맞으면 아무 일도 안 일어난다.
+    await submitCheer(parsed.playerId, parsed.secret, {})
+    account = { ...parsed, nickname: '' }
+    // **여기 쌓인 응원은 이미 보낸 것으로 친다.** 안 그러면 이 기기의 누적이
+    // 이어받은 신분으로 한 번 더 올라가 전체 집계가 부풀어 오른다.
+    window.sneaky?.saveAccount?.({ ...account, cheerSent: { ...wallet.cheer } })
+    restoreEl.value = ''
+    say(restoreMsgEl, '이어받았습니다. 이제부터 친 것이 이 이름으로 올라갑니다')
+    renderAccount()
+    loadRanking()
+  } catch {
+    say(restoreMsgEl, '맞지 않는 코드입니다', true)
+  }
+})
+
+renderPeriods()
 
 function boot() {
   if (window.sneaky) {

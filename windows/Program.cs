@@ -292,6 +292,16 @@ sealed class Overlay : Form
     /// <summary>구단별 응원 원장. <b>줄어드는 일이 없다</b> — 배트를 사도 그대로다.</summary>
     private Dictionary<string, int> cheer = new();
     private const string DefaultBat = "bare";
+
+    /// <summary>
+    /// 랭킹에 쓰는 신분. 계정이 아니라 <b>기기가 만든 무작위 한 쌍</b>이다 —
+    /// 이메일도 비밀번호도 없고, 둘을 이어 붙인 것이 사용자가 보는 「복구 코드」다.
+    /// </summary>
+    private string? playerId;
+    private string? playerSecret;
+    private string? nickname;
+    /// <summary>지금까지 서버에 보낸 몫. 응원 원장에서 이만큼을 뺀 것이 다음에 올릴 델타다.</summary>
+    private Dictionary<string, int> cheerSent = new();
     public event Action? GearChanged;
 
     /// <summary>상점 — 오버레이가 아니라 보통 창이다. 클릭 통과에 예외를 파지 않는다.</summary>
@@ -385,6 +395,11 @@ sealed class Overlay : Form
         owned,
         equipped,
         cheer,
+        cheerSent,
+        // 랭킹 신분은 있을 때만 싣는다. 없으면 게임이 처음 보낼 때 만든다.
+        account = playerId is null || playerSecret is null
+            ? null
+            : new { playerId, secret = playerSecret, nickname = nickname ?? "" },
     });
 
     /// <summary>
@@ -538,6 +553,13 @@ sealed class Overlay : Form
             type: 'equip', key,
           }),
           onGear: (handler) => { window.__sneakyGear = handler },
+          saveAccount: (a) => window.chrome.webview.postMessage({
+            type: 'account', playerId: a.playerId, secret: a.secret,
+            nickname: a.nickname, cheerSent: a.cheerSent,
+          }),
+          saveSynced: (sent) => window.chrome.webview.postMessage({
+            type: 'synced', cheerSent: sent,
+          }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
@@ -651,6 +673,33 @@ sealed class Overlay : Form
                 return;
             }
 
+            // 랭킹 신분을 처음 만들었거나(등록) 복구 코드로 바꿔 넣었을 때.
+            if (type == "account")
+            {
+                var id = body.GetProperty("playerId").GetString();
+                var secret = body.GetProperty("secret").GetString();
+                if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(secret)) return;
+                playerId = id;
+                playerSecret = secret;
+                nickname = body.TryGetProperty("nickname", out var nk) ? nk.GetString() : null;
+                // 복구 코드로 다른 기기의 기록을 이어받으면, 여기서 쌓인 응원은 아직 안 보낸 것으로 친다.
+                if (body.TryGetProperty("cheerSent", out var cs) && cs.ValueKind == JsonValueKind.Object)
+                    cheerSent = cs.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32());
+                PushGear();
+                return;
+            }
+
+            // 서버에 올리기가 성공했다. 보낸 만큼만 옮겨 적는다.
+            if (type == "synced")
+            {
+                if (body.TryGetProperty("cheerSent", out var sent) && sent.ValueKind == JsonValueKind.Object)
+                {
+                    cheerSent = sent.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32());
+                    WriteState();
+                }
+                return;
+            }
+
             // 타구 하나가 번 점수. <b>셸은 더하기만 한다</b> — 얼마를 주는지는 게임이 정한다.
             if (type == "earn")
             {
@@ -735,6 +784,12 @@ sealed class Overlay : Form
             cheer = json.TryGetProperty("cheer", out var ch) && ch.ValueKind == JsonValueKind.Object
                 ? ch.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32())
                 : new Dictionary<string, int>();
+            cheerSent = json.TryGetProperty("cheerSent", out var cs2) && cs2.ValueKind == JsonValueKind.Object
+                ? cs2.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32())
+                : new Dictionary<string, int>();
+            playerId = json.TryGetProperty("playerId", out var pid) ? pid.GetString() : null;
+            playerSecret = json.TryGetProperty("playerSecret", out var psec) ? psec.GetString() : null;
+            nickname = json.TryGetProperty("nickname", out var nn) ? nn.GetString() : null;
             BatterKit = json.TryGetProperty("batterKit", out var b) ? Stored(b.GetString()) : DefaultBatterKit;
             PitcherKit = json.TryGetProperty("pitcherKit", out var p) ? Stored(p.GetString()) : DefaultPitcherKit;
             HoldKey = HoldKeyOption.Find(json.TryGetProperty("controlKey", out var c) ? c.GetString() : null);
@@ -757,6 +812,10 @@ sealed class Overlay : Form
                 owned,
                 equipped,
                 cheer,
+                cheerSent,
+                playerId,
+                playerSecret,
+                nickname,
                 batterKit = BatterKit ?? NoKit,
                 pitcherKit = PitcherKit ?? NoKit,
                 controlKey = HoldKey.Id,

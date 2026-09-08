@@ -181,6 +181,20 @@
   게임에서 번 포인트가 열려 있는 상점에 바로 보이고, 상점에서 바꿔 낀 배트가 바로 타석에 선다.
   주입하는 JSON 은 **손으로 조립하지 않고 직렬화한다**(`JSONSerialization`/`JsonSerializer`).
 
+- **응원 랭킹**: 쌓인 응원을 **5분마다**(켠 지 30초 뒤 한 번 더) Supabase 로 올린다.
+  프로젝트는 `SNEAKY_BASEBALL`(서울) — 지구미아와 **다른 프로젝트**다.
+  **총량이 아니라 델타를 보낸다**(`sync.js`, 순수) — 총량을 올리면 재시도 한 번이 곧 중복
+  적립이다. 성공했을 때만 `cheerSent` 에 보낸 만큼을 더한다. 보내는 사이에 더 친 몫은
+  다음 차례에 간다.
+  **계정을 만들지 않는다** — 기기가 만든 uuid + 비밀 문자열 한 쌍이 신분이고, 둘을 이어
+  붙인 것이 「복구 코드」다. 다른 기기에 넣으면 그 이름으로 이어 친다. 이어받을 때
+  **그 기기에 쌓인 응원은 「이미 보낸 것」으로 적는다** — 안 그러면 누적이 한 번 더 올라간다.
+  **표에는 아무도 직접 못 닿는다.** RLS 를 켜고 정책을 안 만들었고, 길은 `security definer`
+  함수 여섯 개뿐이다. 상한(1회 30,000P)·시간당 60회로 어뷰징을 **막을 수 있는 만큼만** 막고,
+  화면에 「재미로 보는 집계」라고 적어 둔다.
+  기간은 일간·주간·연간·전체이고 **한국 시간으로 끊는다**(UTC 로 끊으면 새벽에 판이 바뀐다).
+  CSP `connect-src` 를 그 주소 하나로 못 박아 앱이 다른 데로는 못 붙는다.
+
 ## 실행
 ```
 npm test           # 순수 모듈 단위 테스트 (vitest)
@@ -196,13 +210,15 @@ npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ic
 - `src/game/` — 순수 모듈. Electron·Canvas를 모른다. 시간은 항상 인자(`now`)로 받는다.
   - `pitches.js` 구종·궤적·난이도·투수 위치 / `judge.js` 판정 / `batted.js` 타구
   - `gear.js` 배트 다섯 자루(값·힘·색·굵기) / `wallet.js` 지갑·응원·소유
+  - `sync.js` 서버에 무엇을 보낼지(델타·복구 코드) — 네트워크는 모른다
   - `fielder.js` 외야수 — 궤적 하나를 받아 「사람이 거기 닿는가」에만 답한다
   - `engine.js` 상태 전이
 - `src/render/` — `sprites.js` 실루엣 포즈·유니폼 덧그리기, `draw.js` 프레임 렌더,
   `teams.js` 10구단 20벌 데이터(순수), `kit-bitmap.js` 격자 → RGBA(순수),
   `glyphs.js` 모자 글자 10개를 1×1 상자에 그리는 벡터 경로
 - `src/renderer/` — 루프·입력. `window.sneaky` 가 있으면 앱, 없으면 브라우저로 친다.
-- `src/shop/` — 배트 상점 창. 오버레이가 아니라 **보통 창**이고, 같은 브리지를 쓴다.
+- `src/net/ranking.js` — 랭킹 서버(Supabase) 주소·익명 키·RPC. 게임 로직은 없다.
+- `src/shop/` — 배트 상점 창(「배트」·「랭킹」 탭). 오버레이가 아니라 **보통 창**이고, 같은 브리지를 쓴다.
 - `mac/` — Swift 셸 (창·핫키·트레이·저장) + `build.sh` / `windows/` — 같은 일을 하는 .NET 셸
 - `scripts/make-icons.mjs` — 아이콘을 코드로 그린다. 의존성 없음.
 - `test/` — 순수 모듈만 테스트한다(`src/game/` 전부와 `src/render/teams.js`·`kit-bitmap.js`).
@@ -213,6 +229,8 @@ npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ic
 - `docs/superpowers/specs/2026-08-12-overlay-mode-design.md` (오버레이 전환)
 - `docs/superpowers/specs/2026-08-13-kbo-uniforms-design.md` (구단 유니폼)
 - `docs/superpowers/specs/2026-09-08-gear-points-design.md` (포인트와 배트)
+- `docs/superpowers/specs/2026-09-08-cheer-ranking-design.md` (응원 랭킹)
+- `docs/superpowers/specs/2026-09-08-distribution-plan.md` (배포 — 계획)
 
 ## 배포
 - 태그(`v*`)를 밀면 CI가 맥 zip · 윈도우 zip 을 만들어 릴리스에 붙인다.
