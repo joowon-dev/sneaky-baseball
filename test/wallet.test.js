@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createWallet, pointsFor, teamIdOf, earn, canBuy, buy, equip, powerMul, cheerRanking,
+  formatCheer,
 } from '../src/game/wallet.js'
 import { HOMERUN, HIT, OUT, FOUL, WHIFF } from '../src/game/judge.js'
 
@@ -137,5 +138,25 @@ describe('cheerRanking', () => {
   it('같은 점수면 순서가 흔들리지 않는다', () => {
     const w = createWallet({ cheer: { nc: 100, kia: 100 } })
     expect(cheerRanking(w).map((r) => r.team)).toEqual(['kia', 'nc'])
+  })
+})
+
+describe('formatCheer', () => {
+  // 100점이 1.00 이다. 값을 못 박는다 — 「나눈 값과 같다」는 단언은 어떤 나눗수로도 통과한다.
+  it('148 은 1.48 이다', () => {
+    expect(formatCheer(148)).toBe('1.48')
+    expect(formatCheer(100)).toBe('1.00')
+    expect(formatCheer(5)).toBe('0.05')
+    expect(formatCheer(0)).toBe('0.00')
+  })
+
+  it('커지면 천 단위를 끊는다', () => {
+    expect(formatCheer(1234567)).toBe('12,345.67')
+  })
+
+  it('없거나 이상한 값은 0.00 이다', () => {
+    expect(formatCheer(null)).toBe('0.00')
+    expect(formatCheer(undefined)).toBe('0.00')
+    expect(formatCheer(-500)).toBe('0.00')
   })
 })

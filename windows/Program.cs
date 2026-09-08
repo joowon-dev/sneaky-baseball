@@ -99,7 +99,8 @@ sealed class OverlayContext : ApplicationContext
             { Enabled = !overlay.Updating });
             menu.Items.Add(new ToolStripSeparator());
         }
-        menu.Items.Add(new ToolStripMenuItem("배트 상점…", null, (_, _) => overlay.OpenShop()));
+        menu.Items.Add(new ToolStripMenuItem("배트 상점…", null, (_, _) => overlay.OpenShop("bats")));
+        menu.Items.Add(new ToolStripMenuItem("응원 랭킹…", null, (_, _) => overlay.OpenShop("rank")));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(KitMenu("타자 팀", "batter"));
         menu.Items.Add(KitMenu("투수 팀", "pitcher"));
@@ -431,19 +432,22 @@ sealed class Overlay : Form
     }
 
     /// <summary>
-    /// 「배트 상점」. 오버레이와 달리 <b>마우스를 받는 보통 창</b>이다.
+    /// 「배트 상점」과 「응원 랭킹」. 오버레이와 달리 <b>마우스를 받는 보통 창</b>이고,
+    /// 둘은 <b>같은 창의 다른 탭</b>이다 — 창을 둘로 두면 지갑도 둘이 된다.
     /// 한 번 만들면 들고 있다가 다시 띄운다.
     /// </summary>
-    public void OpenShop()
+    public void OpenShop(string view = "bats")
     {
         if (shop is { IsDisposed: false })
         {
             shop.Show();
             shop.BringToFront();
             shop.Activate();
+            // 이미 떠 있으면 창을 새로 열지 않고 탭만 바꾼다.
+            shop.Send($"window.__sneakyView && window.__sneakyView('{view}')");
             return;
         }
-        shop = new ShopWindow(env, BridgeScript(), OnWebMessage);
+        shop = new ShopWindow(env, BridgeScript(), OnWebMessage, view);
         shop.Show();
     }
 
@@ -581,6 +585,7 @@ sealed class Overlay : Form
           savePending: (hits) => window.chrome.webview.postMessage({
             type: 'pending', hits,
           }),
+          scored: () => window.chrome.webview.postMessage({ type: 'scored' }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
@@ -705,6 +710,13 @@ sealed class Overlay : Form
                 nickname = body.TryGetProperty("nickname", out var nk) ? nk.GetString() : null;
                 // 줄에 선 타구는 그대로 둔다 — 진짜로 친 것이니 새 이름으로 올라가면 된다.
                 PushGear();
+                return;
+            }
+
+            // 타구 하나가 서버에 합산됐다. 열려 있는 랭킹만 다시 읽게 한다.
+            if (type == "scored")
+            {
+                shop?.Send("window.__sneakyScored && window.__sneakyScored()");
                 return;
             }
 
@@ -998,14 +1010,17 @@ sealed class ShopWindow : Form
     private readonly CoreWebView2Environment? env;
     private readonly string bridge;
     private readonly EventHandler<CoreWebView2WebMessageReceivedEventArgs> onMessage;
+    private readonly string view;
     private bool ready;
 
     public ShopWindow(CoreWebView2Environment? env, string bridge,
-                      EventHandler<CoreWebView2WebMessageReceivedEventArgs> onMessage)
+                      EventHandler<CoreWebView2WebMessageReceivedEventArgs> onMessage,
+                      string view = "bats")
     {
         this.env = env;
         this.bridge = bridge;
         this.onMessage = onMessage;
+        this.view = view;
 
         Text = "배트 상점";
         // 배트 다섯 장이 한 줄에 들어오는 너비. 줄이 갈리면 마지막 배트만 외따로 떨어진다.
@@ -1035,7 +1050,8 @@ sealed class ShopWindow : Form
 
         await core.AddScriptToExecuteOnDocumentCreatedAsync(bridge);
         core.WebMessageReceived += onMessage;
-        core.Navigate("https://sneaky.app/shop/index.html");
+        // 처음 열 때는 주소에 실어 보낸다 — 아직 페이지가 안 떠서 자바스크립트를 못 부른다.
+        core.Navigate($"https://sneaky.app/shop/index.html?view={view}");
         ready = true;
     }
 

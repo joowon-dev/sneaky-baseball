@@ -431,12 +431,18 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         return config
     }
 
-    /// 「배트 상점」. 오버레이와 달리 **마우스를 받는 보통 창**이다.
+    @objc private func openShop() { openShop(view: "bats") }
+    @objc private func openRanking() { openShop(view: "rank") }
+
+    /// 「배트 상점」과 「응원 랭킹」. 오버레이와 달리 **마우스를 받는 보통 창**이고,
+    /// 둘은 **같은 창의 다른 탭**이다 — 창을 둘로 두면 지갑도 둘이 된다.
     /// 한 번 만들면 들고 있다가 다시 띄운다 — 열 때마다 새로 만들면 캔버스를 매번 다시 그린다.
-    @objc private func openShop() {
+    private func openShop(view: String) {
         if let shopWindow {
             NSApp.activate(ignoringOtherApps: true)
             shopWindow.makeKeyAndOrderFront(nil)
+            // 이미 떠 있으면 창을 새로 열지 않고 탭만 바꾼다.
+            shopWebView?.evaluateJavaScript("window.__sneakyView && window.__sneakyView('\(view)')")
             return
         }
 
@@ -450,7 +456,8 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
         let web = WKWebView(frame: win.contentView!.bounds, configuration: makeConfig())
         web.autoresizingMask = [.width, .height]
-        web.load(URLRequest(url: URL(string: "\(webScheme)://app/shop/index.html")!))
+        // 처음 열 때는 주소에 실어 보낸다 — 아직 페이지가 안 떠서 자바스크립트를 못 부른다.
+        web.load(URLRequest(url: URL(string: "\(webScheme)://app/shop/index.html?view=\(view)")!))
         win.contentView?.addSubview(web)
 
         shopWindow = win
@@ -492,6 +499,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
           savePending: (hits) => window.webkit.messageHandlers.sneaky.postMessage({
             type: 'pending', hits,
           }),
+          scored: () => window.webkit.messageHandlers.sneaky.postMessage({ type: 'scored' }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
@@ -687,9 +695,13 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             menu.addItem(.separator())
         }
 
-        let shop = NSMenuItem(title: "배트 상점…", action: #selector(openShop), keyEquivalent: "")
+        let shop = NSMenuItem(title: "배트 상점…", action: #selector(openShop as () -> Void), keyEquivalent: "")
         shop.target = self
         menu.addItem(shop)
+
+        let ranking = NSMenuItem(title: "응원 랭킹…", action: #selector(openRanking), keyEquivalent: "")
+        ranking.target = self
+        menu.addItem(ranking)
         menu.addItem(.separator())
 
         menu.addItem(kitMenu(title: "타자 팀", who: "batter"))
@@ -1003,6 +1015,12 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         // 못 보낸 타구 줄이 바뀌었다. 저장만 한다.
         if body["type"] as? String == "pending", let list = body["hits"] as? [[String: Any]] {
             pendingHits = list
+            return
+        }
+
+        // 타구 하나가 서버에 합산됐다. 열려 있는 랭킹만 다시 읽게 한다.
+        if body["type"] as? String == "scored" {
+            shopWebView?.evaluateJavaScript("window.__sneakyScored && window.__sneakyScored()")
             return
         }
 

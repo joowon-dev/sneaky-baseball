@@ -5,7 +5,7 @@
 // 가격표를 셸에 두면 Swift·C#·JS 세 벌이 되어 언젠가 어긋난다.
 
 import { BATS } from '../game/gear.js'
-import { createWallet, canBuy, buy, equip, cheerRanking } from '../game/wallet.js'
+import { createWallet, canBuy, buy, equip, cheerRanking, formatCheer } from '../game/wallet.js'
 import { battedFlight, meters, LAUNCH_DY } from '../game/batted.js'
 import { HIT } from '../game/judge.js'
 import { drawFigure, batterStance } from '../render/sprites.js'
@@ -49,7 +49,7 @@ function renderCheer() {
       const li = document.createElement('li')
       const b = document.createElement('b')
       b.textContent = teamName(team)
-      li.append(b, ` ${won(points)}P`)
+      li.append(b, ` ${formatCheer(points)}`)
       return li
     })
     : [Object.assign(document.createElement('li'), {
@@ -149,9 +149,12 @@ function preview(canvas, bat) {
 
 function setWallet(next) {
   wallet = createWallet(next)
+  // 신분을 이제 막 알았으면(첫 안타) 랭킹을 다시 읽는다 — 「내 자리」가 그때 생긴다.
+  const learned = !account && next?.account?.playerId
   if (next?.account?.playerId) account = next.account
   render()
   renderAccount()
+  if (learned && !rankEl.hidden) loadRanking()
 }
 
 function doBuy(bat) {
@@ -234,7 +237,7 @@ function row(no, name, points, mine = false) {
   who.textContent = name
   const pt = document.createElement('span')
   pt.className = 'pt'
-  pt.textContent = `${won(points)}P`
+  pt.textContent = formatCheer(points)
   li.append(rank, who, pt)
   return li
 }
@@ -271,7 +274,7 @@ async function loadRanking() {
 
     const standing = mine?.[0]
     myStandingEl.textContent = standing && standing.rank > 0
-      ? `내 자리 — ${standing.rank}위 / ${standing.total_players}명 · ${won(standing.points)}P`
+      ? `내 자리 — ${standing.rank}위 / ${standing.total_players}명 · ${formatCheer(standing.points)}`
       : '아직 이 기간에 올린 응원이 없습니다.'
   } catch {
     teamRankEl.replaceChildren(emptyRow('랭킹을 못 불러왔습니다'))
@@ -338,7 +341,24 @@ document.getElementById('do-restore').addEventListener('click', async () => {
 
 renderPeriods()
 
+// 트레이의 「응원 랭킹…」이 이걸 부른다 — 창이 이미 떠 있으면 탭만 바꾼다.
+window.__sneakyView = showView
+
+// 게임 창에서 친 타구가 **서버에 합산된 순간** 셸이 이걸 부른다.
+// 30초 타이머를 기다리지 않고 그 자리에서 순위가 바뀐다.
+window.__sneakyScored = () => {
+  if (!rankEl.hidden) loadRanking()
+}
+
+// 랭킹을 열어 둔 채로 치는 사람에게는 순위가 살아 움직여야 한다. 닫혀 있으면 안 부른다.
+setInterval(() => {
+  if (!rankEl.hidden) loadRanking()
+}, 30 * 1000)
+
 function boot() {
+  // 트레이의 어느 항목으로 열었는지가 주소에 실려 온다.
+  if (new URLSearchParams(location.search).get('view') === 'rank') showView('rank')
+
   if (window.sneaky) {
     kit = kitOf(window.sneaky.kits?.batter)
     setWallet(window.sneaky.gear ?? {})

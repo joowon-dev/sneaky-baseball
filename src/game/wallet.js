@@ -92,6 +92,16 @@ export function powerMul(wallet) {
   return batOf(wallet.equipped).powerMul
 }
 
+/**
+ * 응원 포인트를 사람에게 보여 주는 모양. **100점이 1.00 이다** —
+ * 148 이면 1.48. 원장은 정수로 두고 **보여 줄 때만** 나눈다.
+ * 소수로 저장하면 더할 때마다 오차가 끼고, 서버가 매기는 점수와도 어긋난다.
+ */
+export function formatCheer(points) {
+  const value = Math.max(0, Math.round(points ?? 0)) / 100
+  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 /** 응원 원장을 많이 넣은 구단 순으로. 같으면 구단 키 순 — 순서가 매번 흔들리면 안 된다. */
 export function cheerRanking(wallet) {
   return Object.entries(wallet.cheer)

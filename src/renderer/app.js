@@ -112,6 +112,8 @@ async function flushHits() {
       // 모양이 틀린 것은 서버에 헛걸음하지 말고 여기서 버린다.
       if (sendableHit(hit)) {
         await submitHit(account.playerId, account.secret, hit.team, hit.result, hit.meters)
+        // 서버에 합산됐다. 열려 있는 랭킹이 그 자리에서 바뀌어야 한다.
+        window.sneaky?.scored?.()
       }
       pending = dropHead(pending)
       savePending()
