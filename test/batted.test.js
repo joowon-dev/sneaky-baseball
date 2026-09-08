@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  battedFlight, battedBall, carry, travel, clearsFence,
+  battedFlight, battedBall, carry, travel, clearsFence, meters,
   GRAVITY, FENCE_DIST, FENCE_H, LAUNCH_DY,
 } from '../src/game/batted.js'
 import { HOMERUN, HIT, FOUL, WHIFF } from '../src/game/judge.js'
@@ -257,5 +257,39 @@ describe('팝파울', () => {
     const hit = battedFlight(HIT, 60, 0)
     expect(hit.vx).toBeGreaterThan(0)
     expect(hit.vy).toBeLessThan(hit.vx) // 32도 근처는 가로가 더 크다
+  })
+})
+
+describe('배트 힘 배수(powerMul)', () => {
+  it('배수가 1이면 궤적이 예전과 완전히 같다 — 아무것도 안 산 사람의 게임은 안 변한다', () => {
+    for (const off of [0, -40, 40, 120]) {
+      expect(battedFlight(HIT, off, 0, LAUNCH_DY, 1)).toEqual(battedFlight(HIT, off, 0, LAUNCH_DY))
+    }
+  })
+
+  // 값을 못 박는다. 「센 배트가 더 멀리 간다」만 보면 배수를 1.0001 로 둬도 통과한다.
+  it('카본(1.16)은 퍼펙트 홈런을 158m에서 212m로 늘린다', () => {
+    expect(meters(battedFlight(HIT, 0))).toBe(158)
+    expect(meters(battedFlight(HIT, 0, 0, LAUNCH_DY, 1.16))).toBe(212)
+  })
+
+  it('40ms 어긋난 타구도 91m에서 122m로 늘어난다', () => {
+    expect(meters(battedFlight(HIT, 40))).toBe(91)
+    expect(meters(battedFlight(HIT, 40, 0, LAUNCH_DY, 1.16))).toBe(122)
+  })
+
+  // 홈런이 쉬워지는 정도가 곧 이 기능의 값이다. 기록을 둘로 가른 이유이기도 하다.
+  it('담장을 넘길 수 있는 타이밍 여유가 13ms에서 33ms로 넓어진다', () => {
+    const window = (mul) => {
+      let last = -1
+      for (let ms = 0; ms <= 80; ms += 1) {
+        if (!clearsFence(battedFlight(HIT, ms, 0, LAUNCH_DY, mul))) break
+        last = ms
+      }
+      return last
+    }
+    expect(window(1)).toBe(13)
+    expect(window(1.04)).toBe(18)
+    expect(window(1.16)).toBe(33)
   })
 })

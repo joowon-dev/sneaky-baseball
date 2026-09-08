@@ -63,15 +63,19 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
  * 같은 홈런도 매번 다른 궤적을 그린다. 헛스윙은 null.
  *
  * launchDy는 타격점 높이 — 기본값(LAUNCH_DY)을 쓰면 판정과 그림이 같은 궤적을 본다.
+ *
+ * powerMul은 지금 낀 배트의 힘 배수다(gear.js). **인자로 받는다** —
+ * MAX_SPEED 상수를 배트에 따라 고치면 결정론이 깨지고, 테스트가 옛 값과 새 값을
+ * 구분하지 못한다. 1이면 아무 배트도 안 산 것이고, 궤적이 예전과 완전히 같아야 한다.
  */
-export function battedFlight(result, errorMs, lane = 0, launchDy = LAUNCH_DY) {
+export function battedFlight(result, errorMs, lane = 0, launchDy = LAUNCH_DY, powerMul = 1) {
   if (result === WHIFF) return null
 
   const off = clamp(errorMs ?? 0, -WINDOWS.foul, WINDOWS.foul)
   // 힘은 오차에 **선형이 아니라 더 가파르게** 빠진다. 선형으로 두면 천장을 올린 만큼
   // 어중간하게 맞힌 타구까지 같이 멀리 가서, 잘 맞힌 보람이 없다.
   const power = (1 - Math.abs(off) / WINDOWS.foul) ** POWER_CURVE
-  const speed = MAX_SPEED * (MIN_SPEED_RATIO + (1 - MIN_SPEED_RATIO) * power)
+  const speed = MAX_SPEED * powerMul * (MIN_SPEED_RATIO + (1 - MIN_SPEED_RATIO) * power)
 
   // 빠르게 휘두르면 퍼올려 뜨고, 늦으면 낮게 깔린다.
   // 파울만은 타이밍과 무관하게 팝파울이다 — 그래서 clamp 밖에 둔다.
