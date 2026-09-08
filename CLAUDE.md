@@ -221,7 +221,7 @@ npm start          # 맥 앱을 빌드해서 띄운다 (mac/build.sh)
 npm run build:mac  # dist/SneakyBaseball-mac.zip 까지
 npm run dmg        # dist/SneakyBaseball-mac.dmg (임시 서명. 배포용 아님)
 npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ico)
-./mac/notarize.sh  # 서명 → 공증 → 스테이플. zip 과 dmg 를 **따로** 공증한다 (배포용은 이것)
+./mac/notarize.sh  # 서명 → 공증 → 스테이플. zip 과 dmg 를 **따로** 서명·공증한다 (배포용은 이것)
 ```
 윈도우 설치본은 `iscc /DAppVersion=1.2.0 windows/installer.iss` (Inno Setup 6, 윈도우에서만).
 윈도우 빌드는 윈도우에서만 된다 — `.github/workflows/release.yml` 가 태그를 밀 때 만든다.
@@ -264,6 +264,14 @@ npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ic
 - **배포용 맥 zip 은 `./mac/notarize.sh` 로 만든다.** `build.sh` 는 임시(ad-hoc) 서명뿐이라
   그대로 올리면 Gatekeeper 가 막는다 — macOS 15 부터는 우클릭 → 열기 우회도 없어졌다.
   CI 의 맥 산출물도 임시 서명이라 **배포에 쓰면 안 된다**(인증서가 CI 에 없다).
+  태그를 밀어 릴리스가 만들어지면 맥 zip·dmg 를 공증본으로 **덮어써야** 한다
+  (`gh release upload v… --clobber`). 이걸 빼면 받는 사람이 앱을 못 열고, 자동 업데이트도
+  `spctl` 에서 걸려 페이지만 열린다.
+  **dmg 는 스테이플만으로 부족하다 — 서명도 해야 한다.** 스테이플만 박으면
+  `stapler validate` 는 통과하는데 Gatekeeper 는 「no usable signature」로 거절한다.
+  서명이 파일을 바꾸므로 **공증보다 먼저** 서명한다(뒤에 하면 스테이플이 깨진다).
+  검사는 앱과 dmg 가 다르다 — 앱은 `spctl --assess --type execute`,
+  dmg 는 `spctl -a -t open --context context:primary-signature` 다.
   키체인 프로필 `webswing-notary` 를 그대로 쓴다.
 - 윈도우는 코드 서명이 없어 SmartScreen 경고를 한 번 넘겨야 한다.
 - 사운드는 의도적으로 없음

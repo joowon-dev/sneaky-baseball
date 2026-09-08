@@ -60,10 +60,19 @@ spctl --assess --type execute --verbose=4 "$APP"
 echo "› dmg 만들기"
 ./mac/dmg.sh
 
+# **dmg 에도 서명한다.** 스테이플만 박으면 `stapler validate` 는 통과하지만
+# Gatekeeper 는 「no usable signature」로 거절한다 — 안의 앱이 멀쩡해도 dmg 를 열 때
+# 한 번 더 물어본다. 서명은 파일을 바꾸므로 **공증보다 먼저** 해야 한다(뒤에 하면 스테이플이 깨진다).
+echo "› dmg 서명"
+codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+
 echo "› dmg 제출"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
+
+# 받는 사람의 맥이 dmg 를 볼 때 그대로. execute 가 아니라 open 이다.
+spctl -a -t open --context context:primary-signature -vv "$DMG"
 
 du -h "$ZIP" "$DMG" | awk '{print "› " $1 "  " $2}'
 echo "› 끝났습니다 — dmg 를 열면 바로 끌어 넣을 수 있습니다"
