@@ -17,6 +17,8 @@ import {
   drawFigure, batterStance, batterSwing, pitcherWindup, pitcherRelease,
   fielderStand, fielderRun, fielderCatch,
 } from './sprites.js'
+import { BATS } from '../game/gear.js'
+import { pointsFor } from '../game/wallet.js'
 
 // 투명한 배경 위 검은 실루엣. 어두운 앱 위에서도 읽히도록 흰 번짐을 깔고 그린다.
 const INK = '#101013'
@@ -109,9 +111,12 @@ export function layout(width, height) {
   return { x: MARGIN_X, y: height - MARGIN_Y - h, w, h }
 }
 
+/** 배트를 안 샀을 때. 맨손 배트에 포인트 0 — 예전 화면 그대로다. */
+const NO_GEAR = { bat: BATS[0], points: 0 }
+
 export function draw(
   ctx, width, height, state, now,
-  kits = NO_KITS, pitcherX = PITCHER_X_BASE, grabbable = false,
+  kits = NO_KITS, pitcherX = PITCHER_X_BASE, grabbable = false, gear = NO_GEAR,
 ) {
   ctx.clearRect(0, 0, width, height)
 
@@ -131,9 +136,9 @@ export function draw(
   ctx.fillStyle = INK
   ctx.strokeStyle = INK
 
-  drawScore(ctx, field, ui, state)
+  drawScore(ctx, field, ui, state, gear)
   drawContactMark(ctx, spot, ui, state, now)
-  drawPeople(ctx, field, spot, ui, state, now, kits, pitcherX)
+  drawPeople(ctx, field, spot, ui, state, now, kits, pitcherX, gear.bat)
   if (grabbable) drawGrabHint(ctx, field, spot, ui, pitcherX)
 
   // 안 친 공은 결과가 난 뒤에도 계속 날아가 뒤로 빠진다.
@@ -188,7 +193,7 @@ function geometry(field, pitcherX) {
 }
 
 /** 상단 바가 없어졌으니 기록은 필드 왼쪽 위에 한 줄로. */
-function drawScore(ctx, field, ui, state) {
+function drawScore(ctx, field, ui, state, gear) {
   ctx.save()
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
@@ -197,7 +202,11 @@ function drawScore(ctx, field, ui, state) {
   ctx.shadowBlur = ui.glow
   ctx.fillStyle = SOFT
 
-  const score = `홈런 ${state.homeRuns}   연속 ${state.streak}   최고 ${state.bestMeters}m`
+  // 포인트는 0일 때 안 낸다 — 아무것도 안 산 사람의 화면에 새 글씨가 늘면 안 된다.
+  const purse = gear.points > 0 ? `   ${gear.points.toLocaleString('en-US')}P` : ''
+  // 장비 기록도 맨몸 기록보다 멀 때만 낸다. 둘이 같으면 같은 숫자가 두 번 뜬다.
+  const geared = state.bestGearedMeters > state.bestMeters ? `   장비 ${state.bestGearedMeters}m` : ''
+  const score = `홈런 ${state.homeRuns}   연속 ${state.streak}   최고 ${state.bestMeters}m${geared}${purse}`
   for (let i = 0; i < 3; i += 1) ctx.fillText(score, 0, 0)
   ctx.restore()
 }
@@ -321,13 +330,13 @@ function drawFielder(ctx, spot, ui, space, state, now, kits, flight) {
   )
 }
 
-function drawPeople(ctx, field, spot, ui, state, now, kits, pitcherX) {
+function drawPeople(ctx, field, spot, ui, state, now, kits, pitcherX, bat) {
   // 타자는 오른쪽(투수)을 본다 — 그래서 좌우 반전.
   const swung = state.phase === RESULT && state.lastResult?.timing !== 'take'
   const recovered = swung && now - state.resultAt > RESULT_MS
   const pose = swung && !recovered ? batterSwing : batterStance
 
-  drawFigure(ctx, pose, field.w * BATTER_X, spot.ground, spot.batterH, -1, ui.glow, kits.batter)
+  drawFigure(ctx, pose, field.w * BATTER_X, spot.ground, spot.batterH, -1, ui.glow, kits.batter, bat)
 
   const throwing = state.phase === PITCHING
   const pitcher = throwing ? pitcherRelease : pitcherWindup
@@ -550,7 +559,10 @@ function drawOutcome(ctx, space, ui, state, now, flight) {
   if (result !== FOUL) {
     ctx.fillStyle = SOFT
     ctx.font = `500 ${ui.small}px ui-monospace, Menlo, monospace`
-    for (let i = 0; i < 3; i += 1) ctx.fillText(`${meters}m`, spot.x, spot.y - rise + ui.small * 1.5)
+    // 이번 타구가 번 점수를 비거리 옆에 붙인다 — 아웃은 0점이라 아무것도 안 붙는다.
+    const gained = pointsFor(result, meters)
+    const line = gained > 0 ? `${meters}m  +${gained}P` : `${meters}m`
+    for (let i = 0; i < 3; i += 1) ctx.fillText(line, spot.x, spot.y - rise + ui.small * 1.5)
   }
 
   ctx.restore()

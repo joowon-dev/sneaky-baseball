@@ -4,8 +4,10 @@
 // 바탕화면을 덮는 투명·클릭 통과 오버레이, 전역 단축키, 트레이 아이콘, 기록 저장.
 // mac/Sources/main.swift 와 같은 일을 하고, 브리지(window.sneaky)도 같은 모양이다.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -39,6 +41,8 @@ sealed class OverlayContext : ApplicationContext
         overlay.RecordChanged += _ => tray.ContextMenuStrip = BuildMenu();
         overlay.KitChanged += () => tray.ContextMenuStrip = BuildMenu();
         overlay.SettingsChanged += () => tray.ContextMenuStrip = BuildMenu();
+        overlay.GearChanged += () => tray.ContextMenuStrip = BuildMenu();
+        overlay.UpdateChanged += () => tray.ContextMenuStrip = BuildMenu();
     }
 
     /// <summary>메뉴에 세울 구단 목록. src/render/teams.js 의 id·name 과 같아야 한다.</summary>
@@ -80,8 +84,23 @@ sealed class OverlayContext : ApplicationContext
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem($"최고 비거리  {overlay.BestMeters}m") { Enabled = false });
+        if (overlay.BestGearedMeters > overlay.BestMeters)
+            menu.Items.Add(new ToolStripMenuItem($"장비 기록  {overlay.BestGearedMeters}m") { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem($"보유 포인트  {overlay.Points}P") { Enabled = false });
         menu.Items.Add(new ToolStripMenuItem($"{overlay.HoldKey.Title} 를 누르고 있는 동안 투구") { Enabled = false });
         menu.Items.Add(new ToolStripMenuItem($"스윙  {overlay.HoldKey.Title} + Space") { Enabled = false });
+        menu.Items.Add(new ToolStripSeparator());
+        // 1단계 — 새 버전이 있을 때만 낸다. 없으면 메뉴에 아무 흔적도 없다.
+        if (overlay.UpdateVersion is not null)
+        {
+            menu.Items.Add(new ToolStripMenuItem(
+                overlay.UpdateNote ?? $"새 버전 {overlay.UpdateVersion} 설치",
+                null, (_, _) => overlay.InstallUpdate())
+            { Enabled = !overlay.Updating });
+            menu.Items.Add(new ToolStripSeparator());
+        }
+        menu.Items.Add(new ToolStripMenuItem("배트 상점…", null, (_, _) => overlay.OpenShop("bats")));
+        menu.Items.Add(new ToolStripMenuItem("응원 랭킹…", null, (_, _) => overlay.OpenShop("rank")));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(KitMenu("타자 팀", "batter"));
         menu.Items.Add(KitMenu("투수 팀", "pitcher"));
@@ -271,7 +290,39 @@ sealed class Overlay : Form
     public double PitcherX { get; private set; } = DefaultPitcherX;
 
     public int BestMeters { get; private set; }
+    /// <summary>
+    /// 장비를 끼고 세운 기록. 맨몸 기록과 따로 둔다 — 배트를 사면 홈런이 쉬워지므로
+    /// 한 칸에 섞으면 옛 기록과 새 기록의 잣대가 달라진다.
+    /// </summary>
+    public int BestGearedMeters { get; private set; }
     public event Action<int>? RecordChanged;
+
+    /// <summary>지갑. 안타·홈런으로 쌓이고 배트를 사면 준다.</summary>
+    public int Points { get; private set; }
+    /// <summary>가진 배트. 맨손(bare)은 언제나 가지고 있다.</summary>
+    private List<string> owned = new() { DefaultBat };
+    private string equipped = DefaultBat;
+    /// <summary>구단별 응원 원장. <b>줄어드는 일이 없다</b> — 배트를 사도 그대로다.</summary>
+    private Dictionary<string, int> cheer = new();
+    private const string DefaultBat = "bare";
+
+    /// <summary>
+    /// 랭킹에 쓰는 신분. 계정이 아니라 <b>기기가 만든 무작위 한 쌍</b>이다 —
+    /// 이메일도 비밀번호도 없고, 둘을 이어 붙인 것이 사용자가 보는 「복구 코드」다.
+    /// </summary>
+    private string? playerId;
+    private string? playerSecret;
+    private string? nickname;
+    /// <summary>
+    /// 아직 못 보낸 타구 줄. 평소에는 칠 때마다 바로 올라가고, 못 보낸 것만 여기 남는다.
+    /// 저장은 셸이 하고, 보내는 일은 게임이 한다 — 그래서 모양을 들여다보지 않고 그대로 실어 나른다.
+    /// </summary>
+    private JsonElement? pendingHits;
+    public event Action? GearChanged;
+
+    /// <summary>상점 — 오버레이가 아니라 보통 창이다. 클릭 통과에 예외를 파지 않는다.</summary>
+    private ShopWindow? shop;
+    private CoreWebView2Environment? env;
 
     /// <summary>'lg-home' 같은 키. null 이면 유니폼 없음(검은 실루엣).</summary>
     /// <summary>처음 깔았을 때 입고 나오는 유니폼. 타자·투수를 홈·원정으로 갈라 둬야 둘이 구분된다.</summary>
@@ -343,8 +394,61 @@ sealed class Overlay : Form
         // Send 는 숨어 있을 때 삼켜 버린다. 유니폼은 숨긴 채로도 바꿀 수 있어야 하므로
         // 보이는지와 무관하게 밀어 넣는다 — 다시 띄웠을 때 이미 갈아입고 있다.
         var literal = key is null ? "null" : $"'{key}'";
-        if (ready) _ = web.ExecuteScriptAsync($"window.__sneakyKit && window.__sneakyKit('{who}', {literal})");
+        var script = $"window.__sneakyKit && window.__sneakyKit('{who}', {literal})";
+        if (ready) _ = web.ExecuteScriptAsync(script);
+        // 상점의 미리보기도 같이 갈아입는다 — 거기 선 타자가 곧 타석에 설 타자다.
+        shop?.Send(script);
         KitChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 두 창에 실어 보낼 지갑. <b>손으로 조립하지 않고 직렬화한다</b> — 따옴표가 하나만 새도
+    /// window.sneaky 가 통째로 안 만들어지고, 게임은 조용히 핫키까지 잃는다.
+    /// </summary>
+    private string GearJson() => JsonSerializer.Serialize(new
+    {
+        points = Points,
+        owned,
+        equipped,
+        cheer,
+        pending = pendingHits,
+        // 랭킹 신분은 있을 때만 싣는다. 없으면 게임이 처음 보낼 때 만든다.
+        account = playerId is null || playerSecret is null
+            ? null
+            : new { playerId, secret = playerSecret, nickname = nickname ?? "" },
+    });
+
+    /// <summary>
+    /// 지갑이 바뀌면 <b>두 창 모두</b>에 밀어 넣는다 — 게임에서 번 포인트가 열려 있는 상점에
+    /// 바로 보이고, 상점에서 바꿔 낀 배트가 바로 타석에 선다.
+    /// </summary>
+    private void PushGear()
+    {
+        WriteState();
+        var script = $"window.__sneakyGear && window.__sneakyGear({GearJson()})";
+        if (ready) _ = web.ExecuteScriptAsync(script);
+        shop?.Send(script);
+        GearChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 「배트 상점」과 「응원 랭킹」. 오버레이와 달리 <b>마우스를 받는 보통 창</b>이고,
+    /// 둘은 <b>같은 창의 다른 탭</b>이다 — 창을 둘로 두면 지갑도 둘이 된다.
+    /// 한 번 만들면 들고 있다가 다시 띄운다.
+    /// </summary>
+    public void OpenShop(string view = "bats")
+    {
+        if (shop is { IsDisposed: false })
+        {
+            shop.Show();
+            shop.BringToFront();
+            shop.Activate();
+            // 이미 떠 있으면 창을 새로 열지 않고 탭만 바꾼다.
+            shop.Send($"window.__sneakyView && window.__sneakyView('{view}')");
+            return;
+        }
+        shop = new ShopWindow(env, BridgeScript(), OnWebMessage, view);
+        shop.Show();
     }
 
     public Overlay()
@@ -366,6 +470,13 @@ sealed class Overlay : Form
 
         holdTimer.Tick += (_, _) => PollKeys();
         holdTimer.Start();
+
+        // 켠 지 20초 뒤에 한 번, 그 뒤로는 하루 한 번.
+        var firstCheck = new System.Windows.Forms.Timer { Interval = 20_000 };
+        firstCheck.Tick += (_, _) => { firstCheck.Stop(); _ = CheckForUpdateAsync(); };
+        firstCheck.Start();
+        updateTimer.Tick += (_, _) => _ = CheckForUpdateAsync();
+        updateTimer.Start();
 
         _ = InitWebAsync();
     }
@@ -417,7 +528,7 @@ sealed class Overlay : Form
         // 사용자 폴더에 캐시를 둔다. 실행 파일 옆에 쓰려 하면 Program Files 에서 막힌다.
         var data = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SneakyBaseball");
-        var env = await CoreWebView2Environment.CreateAsync(null, data);
+        env = await CoreWebView2Environment.CreateAsync(null, data);
         await web.EnsureCoreWebView2Async(env);
 
         var core = web.CoreWebView2;
@@ -449,10 +560,32 @@ sealed class Overlay : Form
         window.sneaky = {
           keyHint: '{{HoldKey.Hint}}',
           kits: { batter: {{batter}}, pitcher: {{pitcher}} },
-          getRecord: () => Promise.resolve({ bestMeters: {{BestMeters}} }),
-          saveRecord: (record) => window.chrome.webview.postMessage({
-            type: 'record', bestMeters: record && record.bestMeters,
+          getRecord: () => Promise.resolve({
+            bestMeters: {{BestMeters}}, bestGearedMeters: {{BestGearedMeters}},
           }),
+          saveRecord: (record) => window.chrome.webview.postMessage({
+            type: 'record',
+            bestMeters: record && record.bestMeters,
+            bestGearedMeters: record && record.bestGearedMeters,
+          }),
+          gear: {{GearJson()}},
+          earn: (e) => window.chrome.webview.postMessage({
+            type: 'earn', points: e.points, team: e.team,
+          }),
+          buyBat: (b) => window.chrome.webview.postMessage({
+            type: 'buy', key: b.key, price: b.price,
+          }),
+          equipBat: (key) => window.chrome.webview.postMessage({
+            type: 'equip', key,
+          }),
+          onGear: (handler) => { window.__sneakyGear = handler },
+          saveAccount: (a) => window.chrome.webview.postMessage({
+            type: 'account', playerId: a.playerId, secret: a.secret, nickname: a.nickname,
+          }),
+          savePending: (hits) => window.chrome.webview.postMessage({
+            type: 'pending', hits,
+          }),
+          scored: () => window.chrome.webview.postMessage({ type: 'scored' }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
@@ -566,18 +699,240 @@ sealed class Overlay : Form
                 return;
             }
 
-            if (type != "record") return;
-            var meters = body.GetProperty("bestMeters").GetInt32();
-            if (meters <= BestMeters) return;
+            // 랭킹 신분을 처음 만들었거나(등록) 복구 코드로 바꿔 넣었을 때.
+            if (type == "account")
+            {
+                var id = body.GetProperty("playerId").GetString();
+                var secret = body.GetProperty("secret").GetString();
+                if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(secret)) return;
+                playerId = id;
+                playerSecret = secret;
+                nickname = body.TryGetProperty("nickname", out var nk) ? nk.GetString() : null;
+                // 줄에 선 타구는 그대로 둔다 — 진짜로 친 것이니 새 이름으로 올라가면 된다.
+                PushGear();
+                return;
+            }
 
-            BestMeters = meters;
+            // 타구 하나가 서버에 합산됐다. 열려 있는 랭킹만 다시 읽게 한다.
+            if (type == "scored")
+            {
+                shop?.Send("window.__sneakyScored && window.__sneakyScored()");
+                return;
+            }
+
+            // 못 보낸 타구 줄이 바뀌었다. 저장만 한다.
+            if (type == "pending")
+            {
+                if (body.TryGetProperty("hits", out var hits) && hits.ValueKind == JsonValueKind.Array)
+                {
+                    pendingHits = hits.Clone();
+                    WriteState();
+                }
+                return;
+            }
+
+            // 타구 하나가 번 점수. <b>셸은 더하기만 한다</b> — 얼마를 주는지는 게임이 정한다.
+            if (type == "earn")
+            {
+                var gained = body.GetProperty("points").GetInt32();
+                if (gained <= 0) return;
+                Points += gained;
+                // 응원은 유니폼을 입었을 때만 쌓이고, 한 번 쌓이면 줄지 않는다.
+                var team = body.TryGetProperty("team", out var t) ? t.GetString() : null;
+                if (!string.IsNullOrEmpty(team))
+                    cheer[team] = (cheer.TryGetValue(team, out var had) ? had : 0) + gained;
+                PushGear();
+                return;
+            }
+
+            // 배트 구매. <b>가격표는 셸에 두지 않는다</b> — 값은 상점(JS)이 순수 모듈에서
+            // 읽어 보내고, 여기서는 「가진 돈으로 되는가 / 이미 가졌는가」만 본다.
+            if (type == "buy")
+            {
+                var key = body.GetProperty("key").GetString();
+                var price = body.GetProperty("price").GetInt32();
+                if (key is null || owned.Contains(key) || price < 0 || Points < price) return;
+                Points -= price;
+                owned.Add(key);
+                equipped = key; // 사면 바로 낀다
+                PushGear();
+                return;
+            }
+
+            if (type == "equip")
+            {
+                var key = body.GetProperty("key").GetString();
+                if (key is null || !owned.Contains(key)) return;
+                equipped = key;
+                PushGear();
+                return;
+            }
+
+            if (type != "record") return;
+
+            var changed = false;
+            if (body.TryGetProperty("bestMeters", out var bm)
+                && bm.ValueKind == JsonValueKind.Number && bm.GetInt32() > BestMeters)
+            {
+                BestMeters = bm.GetInt32();
+                changed = true;
+            }
+            if (body.TryGetProperty("bestGearedMeters", out var gm)
+                && gm.ValueKind == JsonValueKind.Number && gm.GetInt32() > BestGearedMeters)
+            {
+                BestGearedMeters = gm.GetInt32();
+                changed = true;
+            }
+            if (!changed) return;
+
             WriteState();
-            RecordChanged?.Invoke(meters);
+            RecordChanged?.Invoke(BestMeters);
         }
         catch
         {
             // 저장에 실패해도 게임은 계속된다.
         }
+    }
+
+    // MARK: 업데이트
+    //
+    // <b>두 단계로 나눠 뒀다.</b> 1단계는 「새 버전이 있다」고 알리는 것뿐이고,
+    // 2단계는 눌렀을 때 설치본을 받아 조용히 다시 까는 것이다. 눌러야만 깐다 —
+    // 몰래 하는 게임에 자동 재시작만큼 눈에 띄는 것도 없다.
+
+    private const string ReleaseApi = "https://api.github.com/repos/joowon-dev/sneaky-baseball/releases/latest";
+    private const string ReleasePage = "https://github.com/joowon-dev/sneaky-baseball/releases/latest";
+    /// <summary>자동 업데이트가 받아 가는 것은 설치본이다 — zip 은 사람이 직접 풀 때 쓴다.</summary>
+    private const string WinAssetSuffix = "-win-Setup.exe";
+
+    private static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 24 * 60 * 60 * 1000 };
+
+    public string? UpdateVersion { get; private set; }
+    public string? UpdateNote { get; private set; }
+    public bool Updating { get; private set; }
+    private string? updateAsset;
+    public event Action? UpdateChanged;
+
+    private static string CurrentVersion =>
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+
+    /// <summary>"v1.10.0" 이 "1.9.0" 보다 높다. 문자열로 비교하면 거꾸로 나온다.</summary>
+    public static bool IsNewerVersion(string candidate, string current)
+    {
+        static int[] Parts(string text) => text.TrimStart('v', 'V', ' ')
+            .Split('.')
+            .Select(p => int.TryParse(new string(p.TakeWhile(char.IsDigit).ToArray()), out var n) ? n : 0)
+            .ToArray();
+
+        var a = Parts(candidate);
+        var b = Parts(current);
+        for (var i = 0; i < Math.Max(a.Length, b.Length); i += 1)
+        {
+            var x = i < a.Length ? a[i] : 0;
+            var y = i < b.Length ? b[i] : 0;
+            if (x != y) return x > y;
+        }
+        return false;
+    }
+
+    /// <summary>하루 한 번 물어본다. 실패는 조용히 삼킨다.</summary>
+    private async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, ReleaseApi);
+            request.Headers.Add("Accept", "application/vnd.github+json");
+            // GitHub 은 User-Agent 없는 요청을 거절한다.
+            request.Headers.Add("User-Agent", "SneakyBaseball");
+
+            using var response = await http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return;
+
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var tag = json.GetProperty("tag_name").GetString();
+            if (tag is null || !IsNewerVersion(tag, CurrentVersion)) return;
+
+            string? asset = null;
+            if (json.TryGetProperty("assets", out var assets))
+            {
+                foreach (var a in assets.EnumerateArray())
+                {
+                    var name = a.TryGetProperty("name", out var n) ? n.GetString() : null;
+                    if (name is not null && name.EndsWith(WinAssetSuffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        asset = a.GetProperty("browser_download_url").GetString();
+                        break;
+                    }
+                }
+            }
+
+            BeginInvoke(() =>
+            {
+                UpdateVersion = tag;
+                updateAsset = asset;
+                UpdateChanged?.Invoke();
+            });
+        }
+        catch
+        {
+            // 새 버전을 못 찾는 것과 게임이 안 되는 것은 다른 일이다.
+        }
+    }
+
+    /// <summary>2단계 — 받아서 조용히 다시 깐다. 한 걸음이라도 어긋나면 릴리스 페이지를 연다.</summary>
+    public async void InstallUpdate()
+    {
+        if (Updating) return;
+        if (updateAsset is null)
+        {
+            OpenReleasePage();
+            return;
+        }
+
+        Updating = true;
+        UpdateNote = "내려받는 중…";
+        UpdateChanged?.Invoke();
+
+        var path = Path.Combine(Path.GetTempPath(), $"SneakyBaseball-{Guid.NewGuid():N}.exe");
+        try
+        {
+            using (var request = new HttpRequestMessage(HttpMethod.Get, updateAsset))
+            {
+                request.Headers.Add("User-Agent", "SneakyBaseball");
+                using var response = await http.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+                await using var file = File.Create(path);
+                await response.Content.CopyToAsync(file);
+            }
+
+            UpdateNote = "설치하는 중…";
+            UpdateChanged?.Invoke();
+
+            // 조용히 깔고, 돌던 앱을 닫았다가 새것으로 다시 띄운다(installer.iss 가 그렇게 돼 있다).
+            Process.Start(new ProcessStartInfo(path)
+            {
+                Arguments = "/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /NORESTART",
+                UseShellExecute = true,
+            });
+            Application.Exit();
+        }
+        catch
+        {
+            Updating = false;
+            UpdateNote = "직접 받기";
+            UpdateChanged?.Invoke();
+            OpenReleasePage();
+        }
+    }
+
+    private static void OpenReleasePage()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(ReleasePage) { UseShellExecute = true });
+        }
+        catch { }
     }
 
     /// <summary>저장된 값을 키로. "none" 은 사용자가 고른 「유니폼 없음」이다.</summary>
@@ -589,6 +944,24 @@ sealed class Overlay : Form
         {
             var json = JsonDocument.Parse(File.ReadAllText(statePath)).RootElement;
             BestMeters = json.TryGetProperty("bestMeters", out var m) ? m.GetInt32() : 0;
+            // 장비 기록이 없던 시절에 저장된 값에는 맨몸 기록만 있다 — 그게 곧 장비 기록이기도 하다.
+            BestGearedMeters = json.TryGetProperty("bestGearedMeters", out var gm2)
+                ? gm2.GetInt32() : BestMeters;
+            Points = json.TryGetProperty("points", out var pt) ? pt.GetInt32() : 0;
+            owned = json.TryGetProperty("owned", out var ow) && ow.ValueKind == JsonValueKind.Array
+                ? ow.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x != "").ToList()
+                : new List<string> { DefaultBat };
+            if (!owned.Contains(DefaultBat)) owned.Insert(0, DefaultBat);
+            equipped = json.TryGetProperty("equipped", out var eq) ? eq.GetString() ?? DefaultBat : DefaultBat;
+            cheer = json.TryGetProperty("cheer", out var ch) && ch.ValueKind == JsonValueKind.Object
+                ? ch.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32())
+                : new Dictionary<string, int>();
+            pendingHits = json.TryGetProperty("pending", out var pd) && pd.ValueKind == JsonValueKind.Array
+                ? pd.Clone()
+                : null;
+            playerId = json.TryGetProperty("playerId", out var pid) ? pid.GetString() : null;
+            playerSecret = json.TryGetProperty("playerSecret", out var psec) ? psec.GetString() : null;
+            nickname = json.TryGetProperty("nickname", out var nn) ? nn.GetString() : null;
             BatterKit = json.TryGetProperty("batterKit", out var b) ? Stored(b.GetString()) : DefaultBatterKit;
             PitcherKit = json.TryGetProperty("pitcherKit", out var p) ? Stored(p.GetString()) : DefaultPitcherKit;
             HoldKey = HoldKeyOption.Find(json.TryGetProperty("controlKey", out var c) ? c.GetString() : null);
@@ -606,6 +979,15 @@ sealed class Overlay : Form
             File.WriteAllText(statePath, JsonSerializer.Serialize(new
             {
                 bestMeters = BestMeters,
+                bestGearedMeters = BestGearedMeters,
+                points = Points,
+                owned,
+                equipped,
+                cheer,
+                pending = pendingHits,
+                playerId,
+                playerSecret,
+                nickname,
                 batterKit = BatterKit ?? NoKit,
                 pitcherKit = PitcherKit ?? NoKit,
                 controlKey = HoldKey.Id,
@@ -614,5 +996,79 @@ sealed class Overlay : Form
             }));
         }
         catch { }
+    }
+}
+
+/// <summary>
+/// 배트 상점 창. <b>오버레이가 아니다</b> — 창틀이 있고, 마우스를 그대로 받고,
+/// 클릭 통과에 예외를 파지 않는다. 게임 창과 <b>같은 브리지</b>를 얹어서
+/// 상점(JS)이 셸에 사고 끼우겠다고 말할 수 있게 한다.
+/// </summary>
+sealed class ShopWindow : Form
+{
+    private readonly WebView2 web = new();
+    private readonly CoreWebView2Environment? env;
+    private readonly string bridge;
+    private readonly EventHandler<CoreWebView2WebMessageReceivedEventArgs> onMessage;
+    private readonly string view;
+    private bool ready;
+
+    public ShopWindow(CoreWebView2Environment? env, string bridge,
+                      EventHandler<CoreWebView2WebMessageReceivedEventArgs> onMessage,
+                      string view = "bats")
+    {
+        this.env = env;
+        this.bridge = bridge;
+        this.onMessage = onMessage;
+        this.view = view;
+
+        Text = "배트 상점";
+        // 배트 다섯 장이 한 줄에 들어오는 너비. 줄이 갈리면 마지막 배트만 외따로 떨어진다.
+        ClientSize = new Size(920, 560);
+        StartPosition = FormStartPosition.CenterScreen;
+        MinimumSize = new Size(420, 380);
+        ShowInTaskbar = true;
+
+        web.Dock = DockStyle.Fill;
+        Controls.Add(web);
+        _ = InitAsync();
+    }
+
+    private async Task InitAsync()
+    {
+        var environment = env ?? await CoreWebView2Environment.CreateAsync(null, Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SneakyBaseball"));
+        await web.EnsureCoreWebView2Async(environment);
+
+        var core = web.CoreWebView2;
+        core.SetVirtualHostNameToFolderMapping(
+            "sneaky.app", Path.Combine(AppContext.BaseDirectory, "web"),
+            CoreWebView2HostResourceAccessKind.Allow);
+        core.Settings.AreDefaultContextMenusEnabled = false;
+        core.Settings.IsStatusBarEnabled = false;
+        core.Settings.AreDevToolsEnabled = false;
+
+        await core.AddScriptToExecuteOnDocumentCreatedAsync(bridge);
+        core.WebMessageReceived += onMessage;
+        // 처음 열 때는 주소에 실어 보낸다 — 아직 페이지가 안 떠서 자바스크립트를 못 부른다.
+        core.Navigate($"https://sneaky.app/shop/index.html?view={view}");
+        ready = true;
+    }
+
+    public void Send(string script)
+    {
+        if (ready) _ = web.ExecuteScriptAsync(script);
+    }
+
+    /// <summary>닫아도 없애지 않고 숨긴다 — 다시 열 때 캔버스를 처음부터 다시 그리지 않는다.</summary>
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+        base.OnFormClosing(e);
     }
 }

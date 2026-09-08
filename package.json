@@ -1,6 +1,6 @@
 {
   "name": "sneaky-baseball",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "업무 중에 몰래 하는 바탕화면 야구 게임 (맥·윈도우)",
   "scripts": {
@@ -8,7 +8,8 @@
     "build:mac": "./mac/build.sh --zip",
     "icons": "node scripts/make-icons.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dmg": "./mac/dmg.sh"
   },
   "devDependencies": {
     "vitest": "^2.1.8"

@@ -89,6 +89,20 @@ private let pitcherSteps: [(x: Double, title: String)] = [
     (0.90, "멀게"),
     (0.93, "제일 멀게"),
 ]
+private let gearedRecordKey = "bestGearedMeters"
+/// 지갑·응원·가진 배트. 유니폼·투수 거리와 같은 자리에 둔다 — 창이 둘이라 진실이 하나여야 한다.
+private let pointsKey = "points"
+private let ownedKey = "ownedBats"
+private let equippedKey = "equippedBat"
+private let cheerKey = "cheer"
+private let defaultBat = "bare"
+/// 랭킹에 쓰는 신분. 계정이 아니라 **기기가 만든 무작위 한 쌍**이다 —
+/// 이메일도 비밀번호도 없고, 둘을 이어 붙인 것이 사용자가 보는 「복구 코드」다.
+private let playerIdKey = "playerId"
+private let playerSecretKey = "playerSecret"
+private let nicknameKey = "nickname"
+/// 아직 못 보낸 타구 줄. 평소에는 칠 때마다 바로 올라가고, 못 보낸 것만 여기 남는다.
+private let pendingKey = "pendingHits"
 private let batterKitKey = "batterKit"
 private let pitcherKitKey = "pitcherKit"
 private let controlKeyKey = "controlKey"
@@ -100,6 +114,29 @@ private let defaultKits = (batter: "lotte-home", pitcher: "lotte-away")
 private let noKitValue = "none"
 private let screenKey = "screenNumber"
 private let webScheme = "sneaky"
+
+/// 새 버전이 있는지 물어보는 곳. 태그를 밀면 CI 가 여기에 릴리스를 올린다.
+private let releaseAPI = "https://api.github.com/repos/joowon-dev/sneaky-baseball/releases/latest"
+private let releasePage = "https://github.com/joowon-dev/sneaky-baseball/releases/latest"
+/// 자동 업데이트가 받아 가는 것은 zip 이다 — dmg 를 마운트해 자기를 갈아 끼우면 실패할 자리가 너무 많다.
+private let macAssetSuffix = "-mac.zip"
+private let updateCheckInterval: TimeInterval = 24 * 60 * 60
+private let firstUpdateCheckDelay: TimeInterval = 20
+
+/// "v1.2.0" > "1.10.0" 같은 걸 숫자로 비교한다. 문자열로 비교하면 1.10 이 1.9 보다 작다.
+func isNewerVersion(_ candidate: String, than current: String) -> Bool {
+    func parts(_ text: String) -> [Int] {
+        text.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
+            .split(separator: ".").map { Int($0.prefix(while: \.isNumber)) ?? 0 }
+    }
+    let a = parts(candidate), b = parts(current)
+    for i in 0..<max(a.count, b.count) {
+        let x = i < a.count ? a[i] : 0
+        let y = i < b.count ? b[i] : 0
+        if x != y { return x > y }
+    }
+    return false
+}
 
 /// 메뉴에 세울 구단 목록. src/render/teams.js 의 id·name 과 같아야 한다 —
 /// 셸은 게임 코드를 읽지 않으므로 여기 한 벌을 따로 둔다.
@@ -167,6 +204,16 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
+    /// 새 버전. 지금보다 높을 때만 채워진다 — 없으면 메뉴에 아무것도 안 낸다.
+    private var updateVersion: String?
+    private var updateAsset: URL?
+    /// 내려받는 중인가. 메뉴를 두 번 누르는 걸 막고, 진행 상태를 글씨로 보여 준다.
+    private var updating = false
+    private var updateNote: String?
+
+    /// 상점 — 오버레이가 아니라 보통 창이다. 클릭 통과에 예외를 파지 않는다.
+    private var shopWindow: NSWindow?
+    private var shopWebView: WKWebView?
     private var holdTimer: Timer?
     private var hotKeys: [EventHotKeyRef?] = []
     private var swingHotKey: EventHotKeyRef?
@@ -186,6 +233,89 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var bestMeters: Int {
         get { UserDefaults.standard.integer(forKey: recordKey) }
         set { UserDefaults.standard.set(newValue, forKey: recordKey) }
+    }
+
+    /// 장비를 끼고 세운 기록. 맨몸 기록과 따로 둔다 — 배트를 사면 홈런이 쉬워지므로
+    /// 한 칸에 섞으면 옛 기록과 새 기록의 잣대가 달라진다.
+    private var bestGearedMeters: Int {
+        get { UserDefaults.standard.integer(forKey: gearedRecordKey) }
+        set { UserDefaults.standard.set(newValue, forKey: gearedRecordKey) }
+    }
+
+    /// 지갑. 안타·홈런으로 쌓이고 배트를 사면 준다.
+    private var points: Int {
+        get { UserDefaults.standard.integer(forKey: pointsKey) }
+        set { UserDefaults.standard.set(max(0, newValue), forKey: pointsKey) }
+    }
+
+    /// 가진 배트. 맨손은 언제나 가지고 있다.
+    private var ownedBats: [String] {
+        get {
+            let saved = UserDefaults.standard.stringArray(forKey: ownedKey) ?? []
+            return saved.contains(defaultBat) ? saved : [defaultBat] + saved
+        }
+        set { UserDefaults.standard.set(newValue, forKey: ownedKey) }
+    }
+
+    private var equippedBat: String {
+        get { UserDefaults.standard.string(forKey: equippedKey) ?? defaultBat }
+        set { UserDefaults.standard.set(newValue, forKey: equippedKey) }
+    }
+
+    /// 구단별 응원 원장. **줄어드는 일이 없다** — 배트를 사도 그대로다.
+    private var cheer: [String: Int] {
+        get { UserDefaults.standard.dictionary(forKey: cheerKey) as? [String: Int] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: cheerKey) }
+    }
+
+    /// 랭킹 신분. 아직 등록하기 전이면 비어 있다.
+    private var playerId: String? {
+        get { UserDefaults.standard.string(forKey: playerIdKey) }
+        set { UserDefaults.standard.set(newValue, forKey: playerIdKey) }
+    }
+
+    private var playerSecret: String? {
+        get { UserDefaults.standard.string(forKey: playerSecretKey) }
+        set { UserDefaults.standard.set(newValue, forKey: playerSecretKey) }
+    }
+
+    private var nickname: String? {
+        get { UserDefaults.standard.string(forKey: nicknameKey) }
+        set { UserDefaults.standard.set(newValue, forKey: nicknameKey) }
+    }
+
+    /// 못 보낸 타구. 저장은 셸이 하고, 보내는 일은 게임이 한다.
+    private var pendingHits: [[String: Any]] {
+        get { UserDefaults.standard.array(forKey: pendingKey) as? [[String: Any]] ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: pendingKey) }
+    }
+
+    /// 두 창에 실어 보낼 지갑. **손으로 조립하지 않고 직렬화한다** — 따옴표가 하나만 새도
+    /// window.sneaky 가 통째로 안 만들어지고, 게임은 조용히 핫키까지 잃는다.
+    private func gearJSON() -> String {
+        var payload: [String: Any] = [
+            "points": points, "owned": ownedBats, "equipped": equippedBat, "cheer": cheer,
+            "pending": pendingHits,
+        ]
+        // 랭킹 신분은 있을 때만 싣는다. 없으면 게임이 처음 보낼 때 만든다.
+        if let playerId, let playerSecret {
+            payload["account"] = [
+                "playerId": playerId, "secret": playerSecret, "nickname": nickname ?? "",
+            ]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let text = String(data: data, encoding: .utf8)
+        else { return "{}" }
+        return text
+    }
+
+    /// 지갑이 바뀌면 **두 창 모두**에 밀어 넣는다 — 게임에서 번 포인트가 열려 있는 상점에
+    /// 바로 보이고, 상점에서 바꿔 낀 배트가 바로 타석에 선다.
+    private func pushGear() {
+        let script = "window.__sneakyGear && window.__sneakyGear(\(gearJSON()))"
+        webView.evaluateJavaScript(script)
+        shopWebView?.evaluateJavaScript(script)
+        refreshMenu()
     }
 
     /// 투수가 선 자리(필드 상자 가로 비율). 플레이어가 드래그로 옮긴다.
@@ -219,7 +349,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
         // 창이 숨어 있어도 밀어 넣는다 — 다시 띄웠을 때 이미 갈아입고 있어야 한다.
         let literal = key.map { "'\($0)'" } ?? "null"
-        webView.evaluateJavaScript("window.__sneakyKit && window.__sneakyKit('\(who)', \(literal))")
+        let script = "window.__sneakyKit && window.__sneakyKit('\(who)', \(literal))"
+        webView.evaluateJavaScript(script)
+        // 상점의 미리보기도 같이 갈아입는다 — 거기 선 타자가 곧 타석에 설 타자다.
+        shopWebView?.evaluateJavaScript(script)
         refreshMenu()
     }
 
@@ -231,6 +364,8 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         holdTimer = Timer.scheduledTimer(withTimeInterval: holdPollInterval, repeats: true) { [weak self] _ in
             self?.pollKeys()
         }
+
+        scheduleUpdateChecks()
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -273,15 +408,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.isReleasedWhenClosed = false
 
-        let config = WKWebViewConfiguration()
-        let web = Bundle.main.resourceURL!.appendingPathComponent("web")
-        config.setURLSchemeHandler(WebAssetHandler(root: web), forURLScheme: webScheme)
-        config.userContentController.add(self, name: "sneaky")
-        config.userContentController.addUserScript(
-            WKUserScript(source: bridgeScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true)
-        )
-
-        webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
+        webView = WKWebView(frame: window.contentView!.bounds, configuration: makeConfig())
         webView.autoresizingMask = [.width, .height]
         // 웹뷰 자체 배경을 지워야 창의 투명이 살아난다.
         webView.setValue(false, forKey: "drawsBackground")
@@ -289,6 +416,54 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
         window.contentView?.addSubview(webView)
         window.orderFrontRegardless() // 포커스는 절대 가져가지 않는다
+    }
+
+    /// 웹뷰 설정 한 벌. 게임 창과 상점 창이 **같은 브리지**를 쓴다 —
+    /// WKWebViewConfiguration 은 창마다 새로 만들어야 해서 함수로 둔다.
+    private func makeConfig() -> WKWebViewConfiguration {
+        let config = WKWebViewConfiguration()
+        let web = Bundle.main.resourceURL!.appendingPathComponent("web")
+        config.setURLSchemeHandler(WebAssetHandler(root: web), forURLScheme: webScheme)
+        config.userContentController.add(self, name: "sneaky")
+        config.userContentController.addUserScript(
+            WKUserScript(source: bridgeScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
+        return config
+    }
+
+    @objc private func openShop() { openShop(view: "bats") }
+    @objc private func openRanking() { openShop(view: "rank") }
+
+    /// 「배트 상점」과 「응원 랭킹」. 오버레이와 달리 **마우스를 받는 보통 창**이고,
+    /// 둘은 **같은 창의 다른 탭**이다 — 창을 둘로 두면 지갑도 둘이 된다.
+    /// 한 번 만들면 들고 있다가 다시 띄운다 — 열 때마다 새로 만들면 캔버스를 매번 다시 그린다.
+    private func openShop(view: String) {
+        if let shopWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            shopWindow.makeKeyAndOrderFront(nil)
+            // 이미 떠 있으면 창을 새로 열지 않고 탭만 바꾼다.
+            shopWebView?.evaluateJavaScript("window.__sneakyView && window.__sneakyView('\(view)')")
+            return
+        }
+
+        // 배트 다섯 장이 한 줄에 들어오는 너비. 줄이 갈리면 마지막 배트만 외따로 떨어진다.
+        let frame = NSRect(x: 0, y: 0, width: 920, height: 560)
+        let win = NSWindow(contentRect: frame, styleMask: [.titled, .closable, .miniaturizable],
+                           backing: .buffered, defer: false)
+        win.title = "배트 상점"
+        win.isReleasedWhenClosed = false
+        win.center()
+
+        let web = WKWebView(frame: win.contentView!.bounds, configuration: makeConfig())
+        web.autoresizingMask = [.width, .height]
+        // 처음 열 때는 주소에 실어 보낸다 — 아직 페이지가 안 떠서 자바스크립트를 못 부른다.
+        web.load(URLRequest(url: URL(string: "\(webScheme)://app/shop/index.html?view=\(view)")!))
+        win.contentView?.addSubview(web)
+
+        shopWindow = win
+        shopWebView = web
+        NSApp.activate(ignoringOtherApps: true)
+        win.makeKeyAndOrderFront(nil)
     }
 
     /// 렌더러가 기대하는 window.sneaky 를 그대로 만들어 준다 (Electron preload 와 같은 모양).
@@ -299,10 +474,32 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         window.sneaky = {
           keyHint: '\(controlKey.hint)',
           kits: { batter: \(batter), pitcher: \(pitcher) },
-          getRecord: () => Promise.resolve({ bestMeters: \(bestMeters) }),
-          saveRecord: (record) => window.webkit.messageHandlers.sneaky.postMessage({
-            type: 'record', bestMeters: record && record.bestMeters,
+          getRecord: () => Promise.resolve({
+            bestMeters: \(bestMeters), bestGearedMeters: \(bestGearedMeters),
           }),
+          saveRecord: (record) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'record',
+            bestMeters: record && record.bestMeters,
+            bestGearedMeters: record && record.bestGearedMeters,
+          }),
+          gear: \(gearJSON()),
+          earn: (e) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'earn', points: e.points, team: e.team,
+          }),
+          buyBat: (b) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'buy', key: b.key, price: b.price,
+          }),
+          equipBat: (key) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'equip', key,
+          }),
+          onGear: (handler) => { window.__sneakyGear = handler },
+          saveAccount: (a) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'account', playerId: a.playerId, secret: a.secret, nickname: a.nickname,
+          }),
+          savePending: (hits) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'pending', hits,
+          }),
+          scored: () => window.webkit.messageHandlers.sneaky.postMessage({ type: 'scored' }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
@@ -326,6 +523,149 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         """
     }
 
+    // MARK: 업데이트
+    //
+    // **두 단계로 나눠 뒀다.** 1단계는 「새 버전이 있다」고 알리는 것뿐이고,
+    // 2단계는 눌렀을 때 받아서 갈아 끼우는 것이다. 눌러야만 갈아 끼운다 —
+    // 몰래 하는 게임에 자동 재시작만큼 눈에 띄는 것도 없다.
+
+    private var currentVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
+
+    private func scheduleUpdateChecks() {
+        Timer.scheduledTimer(withTimeInterval: firstUpdateCheckDelay, repeats: false) { [weak self] _ in
+            self?.checkForUpdate()
+        }
+        Timer.scheduledTimer(withTimeInterval: updateCheckInterval, repeats: true) { [weak self] _ in
+            self?.checkForUpdate()
+        }
+    }
+
+    /// 하루 한 번 물어본다. 실패는 조용히 삼킨다 — 새 버전을 못 찾는 것과 게임이 안 되는 것은 다른 일이다.
+    private func checkForUpdate() {
+        guard var request = URL(string: releaseAPI).map({ URLRequest(url: $0) }) else { return }
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+            guard let self, let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tag = json["tag_name"] as? String,
+                  isNewerVersion(tag, than: self.currentVersion)
+            else { return }
+
+            let assets = json["assets"] as? [[String: Any]] ?? []
+            let zip = assets.first { ($0["name"] as? String)?.hasSuffix(macAssetSuffix) == true }
+            let url = (zip?["browser_download_url"] as? String).flatMap(URL.init(string:))
+
+            DispatchQueue.main.async {
+                debugLog("새 버전 \(tag)")
+                self.updateVersion = tag
+                self.updateAsset = url
+                self.refreshMenu()
+            }
+        }.resume()
+    }
+
+    /// 2단계 — 받아서 갈아 끼운다. 어느 한 걸음이라도 어긋나면 **손대지 않고** 릴리스 페이지를 연다.
+    @objc private func installUpdate() {
+        guard !updating else { return }
+        guard let asset = updateAsset else {
+            openReleasePage()
+            return
+        }
+        updating = true
+        updateNote = "내려받는 중…"
+        refreshMenu()
+
+        URLSession.shared.downloadTask(with: asset) { [weak self] location, _, error in
+            guard let self else { return }
+            guard let location, error == nil else {
+                DispatchQueue.main.async { self.updateFailed() }
+                return
+            }
+            // 임시 파일은 이 블록이 끝나면 사라진다. 옆에 옮겨 두고 푼다.
+            let work = FileManager.default.temporaryDirectory
+                .appendingPathComponent("sneaky-update-\(UUID().uuidString)")
+            let zip = work.appendingPathComponent("app.zip")
+            do {
+                try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+                try FileManager.default.moveItem(at: location, to: zip)
+            } catch {
+                DispatchQueue.main.async { self.updateFailed() }
+                return
+            }
+            DispatchQueue.main.async { self.swapIn(zip: zip, work: work) }
+        }.resume()
+    }
+
+    private func swapIn(zip: URL, work: URL) {
+        updateNote = "설치하는 중…"
+        refreshMenu()
+
+        let unpacked = work.appendingPathComponent("unpacked")
+        guard run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path]) == 0,
+              let newApp = (try? FileManager.default.contentsOfDirectory(at: unpacked,
+                                                                        includingPropertiesForKeys: nil))?
+                  .first(where: { $0.pathExtension == "app" })
+        else {
+            updateFailed()
+            return
+        }
+
+        // **받은 것이 애플이 검증한 우리 앱인지 본다.** 여기서 걸리면 갈아 끼우지 않는다 —
+        // 남의 zip 을 받아 자기 자리에 넣는 일은 절대 없어야 한다.
+        guard run("/usr/sbin/spctl", ["--assess", "--type", "execute", newApp.path]) == 0,
+              let id = Bundle(url: newApp)?.bundleIdentifier, id == Bundle.main.bundleIdentifier
+        else {
+            debugLog("업데이트 검증 실패")
+            updateFailed()
+            return
+        }
+
+        let target = Bundle.main.bundleURL
+        do {
+            _ = try FileManager.default.replaceItemAt(target, withItemAt: newApp)
+        } catch {
+            // 대개 권한 문제다(/Applications 밖이거나 다른 사용자 소유).
+            debugLog("바꿔 끼우기 실패 \(error)")
+            updateFailed()
+            return
+        }
+
+        // 새 것을 띄우고 지금 것은 물러난다.
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: target, configuration: config) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
+
+    /// 못 했으면 **아무것도 건드리지 않고** 사람에게 넘긴다.
+    private func updateFailed() {
+        updating = false
+        updateNote = "직접 받기"
+        refreshMenu()
+        openReleasePage()
+    }
+
+    private func openReleasePage() {
+        if let url = URL(string: releasePage) { NSWorkspace.shared.open(url) }
+    }
+
+    @discardableResult
+    private func run(_ path: String, _ args: [String]) -> Int32 {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: path)
+        task.arguments = args
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do { try task.run() } catch { return -1 }
+        task.waitUntilExit()
+        return task.terminationStatus
+    }
+
     // MARK: 메뉴바
 
     private func buildStatusItem() {
@@ -337,8 +677,31 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private func refreshMenu() {
         let menu = NSMenu()
         menu.addItem(disabled("최고 비거리  \(bestMeters)m"))
+        if bestGearedMeters > bestMeters {
+            menu.addItem(disabled("장비 기록  \(bestGearedMeters)m"))
+        }
+        menu.addItem(disabled("보유 포인트  \(points)P"))
         menu.addItem(disabled("\(controlKey.title) 을 누르고 있는 동안 투구"))
         menu.addItem(disabled("스윙  \(controlKey.title) + Space"))
+        menu.addItem(.separator())
+
+        // 1단계 — 새 버전이 있을 때만 낸다. 없으면 메뉴에 아무 흔적도 없다.
+        if let updateVersion {
+            let title = updateNote ?? "새 버전 \(updateVersion) 설치"
+            let item = NSMenuItem(title: title, action: #selector(installUpdate), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = !updating
+            menu.addItem(item)
+            menu.addItem(.separator())
+        }
+
+        let shop = NSMenuItem(title: "배트 상점…", action: #selector(openShop as () -> Void), keyEquivalent: "")
+        shop.target = self
+        menu.addItem(shop)
+
+        let ranking = NSMenuItem(title: "응원 랭킹…", action: #selector(openRanking), keyEquivalent: "")
+        ranking.target = self
+        menu.addItem(ranking)
         menu.addItem(.separator())
 
         menu.addItem(kitMenu(title: "타자 팀", who: "batter"))
@@ -636,13 +999,75 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             return
         }
 
-        guard body["type"] as? String == "record",
-              let meters = body["bestMeters"] as? Int,
-              meters > bestMeters
-        else { return }
+        // 랭킹 신분을 처음 만들었거나(등록) 복구 코드로 바꿔 넣었을 때.
+        if body["type"] as? String == "account" {
+            guard let id = body["playerId"] as? String, let secret = body["secret"] as? String,
+                  !id.isEmpty, !secret.isEmpty
+            else { return }
+            playerId = id
+            playerSecret = secret
+            nickname = body["nickname"] as? String
+            // 줄에 선 타구는 그대로 둔다 — 진짜로 친 것이니 새 이름으로 올라가면 된다.
+            pushGear()
+            return
+        }
 
-        bestMeters = meters
-        refreshMenu()
+        // 못 보낸 타구 줄이 바뀌었다. 저장만 한다.
+        if body["type"] as? String == "pending", let list = body["hits"] as? [[String: Any]] {
+            pendingHits = list
+            return
+        }
+
+        // 타구 하나가 서버에 합산됐다. 열려 있는 랭킹만 다시 읽게 한다.
+        if body["type"] as? String == "scored" {
+            shopWebView?.evaluateJavaScript("window.__sneakyScored && window.__sneakyScored()")
+            return
+        }
+
+        // 타구 하나가 번 점수. **셸은 더하기만 한다** — 얼마를 주는지는 게임이 정한다.
+        if body["type"] as? String == "earn", let gained = body["points"] as? Int, gained > 0 {
+            points += gained
+            // 응원은 유니폼을 입었을 때만 쌓이고, 한 번 쌓이면 줄지 않는다.
+            if let team = body["team"] as? String, !team.isEmpty {
+                var ledger = cheer
+                ledger[team] = (ledger[team] ?? 0) + gained
+                cheer = ledger
+            }
+            pushGear()
+            return
+        }
+
+        // 배트 구매. **가격표는 셸에 두지 않는다** — 값은 상점(JS)이 순수 모듈에서 읽어
+        // 보내고, 여기서는 「가진 돈으로 되는가 / 이미 가졌는가」만 본다.
+        if body["type"] as? String == "buy",
+           let key = body["key"] as? String, let price = body["price"] as? Int {
+            guard !ownedBats.contains(key), price >= 0, points >= price else { return }
+            points -= price
+            ownedBats = ownedBats + [key]
+            equippedBat = key // 사면 바로 낀다
+            pushGear()
+            return
+        }
+
+        if body["type"] as? String == "equip", let key = body["key"] as? String {
+            guard ownedBats.contains(key) else { return }
+            equippedBat = key
+            pushGear()
+            return
+        }
+
+        guard body["type"] as? String == "record" else { return }
+
+        var changed = false
+        if let meters = body["bestMeters"] as? Int, meters > bestMeters {
+            bestMeters = meters
+            changed = true
+        }
+        if let meters = body["bestGearedMeters"] as? Int, meters > bestGearedMeters {
+            bestGearedMeters = meters
+            changed = true
+        }
+        if changed { refreshMenu() }
     }
 
     /// 메뉴 막대가 있는 주 화면. NSScreen.main 은 "키 윈도우가 있는 화면"이라

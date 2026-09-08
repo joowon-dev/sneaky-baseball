@@ -34,10 +34,16 @@ jobs:
         with: { node-version: "20" }
       - run: node scripts/make-icons.mjs
       - run: ./mac/build.sh --zip
+      - run: ./mac/dmg.sh
+      # 여기서 나오는 맥 산출물은 **임시(ad-hoc) 서명**이라 Gatekeeper 를 못 지난다.
+      # 빌드가 깨졌는지 보는 용도이고, **배포에는 ./mac/notarize.sh 로 만든 것을 쓴다.**
+      # 자동 업데이트도 서명을 검사하므로 임시 서명 zip 은 설치되지 않는다(페이지만 열린다).
       - uses: actions/upload-artifact@v4
         with:
           name: mac
-          path: dist/SneakyBaseball-mac.zip
+          path: |
+            dist/SneakyBaseball-mac.zip
+            dist/SneakyBaseball-mac.dmg
 
   windows:
     needs: test
@@ -54,10 +60,20 @@ jobs:
           # 디버그 심볼은 빼고 담는다.
           Remove-Item dist/win/*.pdb -ErrorAction SilentlyContinue
           Compress-Archive -Path dist/win/* -DestinationPath dist/SneakyBaseball-win-x64.zip
+      - name: 설치본
+        shell: pwsh
+        run: |
+          # **자동 업데이트가 받아 가는 것이 이 설치본이다.** zip 은 직접 푸는 사람 몫이다.
+          choco install innosetup -y --no-progress
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          if (-not $version) { $version = "0.0.0" }
+          & "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe" /DAppVersion=$version windows/installer.iss
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dist/SneakyBaseball-win-x64.zip
+          path: |
+            dist/SneakyBaseball-win-x64.zip
+            dist/SneakyBaseball-win-Setup.exe
 
   publish:
     needs: [mac, windows]
@@ -68,5 +84,8 @@ jobs:
         with: { path: artifacts }
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.zip
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
           generate_release_notes: true

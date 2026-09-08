@@ -1,7 +1,7 @@
 // 게임 상태 전이. 모든 함수는 새 상태를 반환하는 순수 함수다.
 
 import { HOMERUN, HIT, OUT, FOUL, WHIFF, WINDOWS, judgeSwing, judgeTake } from './judge.js'
-import { battedFlight, restMs, clearsFence, meters, TIME_SCALE } from './batted.js'
+import { battedFlight, restMs, clearsFence, meters, TIME_SCALE, LAUNCH_DY } from './batted.js'
 import { chase } from './fielder.js'
 
 export const READY = 'ready'
@@ -28,6 +28,9 @@ export function createGame(initial = {}) {
     hits: 0,
     streak: 0,
     bestMeters: 0,
+    bestGearedMeters: 0,
+    // 지금 낀 배트의 힘 배수. 1이면 맨손이고, 궤적이 예전과 완전히 같다.
+    powerMul: 1,
     pitches: 0,
     restAt: 0,
     outcomeEndsAt: 0,
@@ -38,6 +41,16 @@ export function createGame(initial = {}) {
     resultAt: 0,
     ...initial,
   }
+}
+
+/**
+ * 낀 배트가 바뀌면 힘 배수만 갈아 끼운다. 굴러가던 타구는 건드리지 않는다 —
+ * 이미 만들어진 궤적은 그때 든 배트의 것이다.
+ */
+export function setPowerMul(state, powerMul) {
+  const mul = Number.isFinite(powerMul) && powerMul > 0 ? powerMul : 1
+  if (mul === state.powerMul) return state
+  return { ...state, powerMul: mul }
 }
 
 export function startPitch(state, pitch, now) {
@@ -120,7 +133,7 @@ function flightEndMs(flight, result, caught) {
 function applyResult(state, verdict, now) {
   const lane = state.pitch?.lane ?? 0
   // 타격 높이(launchDy)는 그리는 쪽 사정이고 멈추는 시각에 미치는 영향은 몇 ms라 여기선 뺀다.
-  const flight = battedFlight(verdict.result, verdict.errorMs, lane)
+  const flight = battedFlight(verdict.result, verdict.errorMs, lane, LAUNCH_DY, state.powerMul ?? 1)
 
   // 홈런은 타이밍이 아니라 담장을 넘었는지로 갈린다. 화면에 그려진 그 선 그대로다.
   // 못 넘겼으면 야수에게 묻는다 — 뜬공에 닿으면 아웃이다.
@@ -166,6 +179,10 @@ function applyResult(state, verdict, now) {
 
   // 최고 기록은 연속이 아니라 가장 멀리 친 거리다.
   // 잡힌 타구도 「얼마나 멀리 칠 뻔했는지」는 말해 준다.
-  next.bestMeters = Math.max(state.bestMeters, flownM)
+  //
+  // **기록은 둘이다.** 배트를 사서 끼우면 홈런이 쉬워지므로, 한 칸에 섞으면 옛 기록과
+  // 새 기록의 잣대가 달라진다 — 맨몸 기록은 힘 배수가 정확히 1일 때만 갱신한다.
+  if ((state.powerMul ?? 1) === 1) next.bestMeters = Math.max(state.bestMeters, flownM)
+  next.bestGearedMeters = Math.max(state.bestGearedMeters ?? 0, flownM)
   return next
 }

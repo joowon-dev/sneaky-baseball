@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://xajmblrdkdnqoxfvsfrt.supabase.co" />
+    <title>배트 상점</title>
+    <link rel="stylesheet" href="shop.css" />
+  </head>
+  <body>
+    <!-- 오버레이가 아니다. 마우스를 받는 보통 창이라 여기서만 마음껏 클릭한다. -->
+    <header>
+      <div class="purse">
+        <span class="label">보유 포인트</span>
+        <strong id="points">0</strong><span class="unit">P</span>
+      </div>
+      <div class="cheer">
+        <span class="label">내가 넣은 응원</span>
+        <ul id="cheer"></ul>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button type="button" data-view="bats" class="on">배트</button>
+      <button type="button" data-view="rank">랭킹</button>
+    </nav>
+
+    <main id="bats"></main>
+
+    <section id="rank" hidden>
+      <nav class="periods" id="periods"></nav>
+
+      <div class="boards">
+        <div class="board">
+          <h2>구단 응원</h2>
+          <ol id="team-rank" class="rows"></ol>
+        </div>
+        <div class="board">
+          <h2>개인</h2>
+          <ol id="player-rank" class="rows"></ol>
+        </div>
+      </div>
+
+      <p id="my-standing" class="mine"></p>
+
+      <div class="account">
+        <div class="row">
+          <label for="nickname">랭킹에 뜰 이름</label>
+          <input id="nickname" maxlength="12" placeholder="아직 없음" />
+          <button type="button" id="save-nickname">바꾸기</button>
+          <span id="nickname-msg" class="msg"></span>
+        </div>
+
+        <details>
+          <summary>다른 기기에서 이어 하기</summary>
+          <p class="hint">
+            아래 코드를 다른 기기의 같은 칸에 넣으면 그쪽 기록이 이 이름으로 이어집니다.
+            <b>이 코드가 곧 신분입니다 — 남에게 주지 마세요.</b>
+          </p>
+          <code id="code">아직 랭킹에 오르지 않았습니다</code>
+          <div class="row">
+            <input id="restore" placeholder="복구 코드 붙여넣기" />
+            <button type="button" id="do-restore">이어받기</button>
+            <span id="restore-msg" class="msg"></span>
+          </div>
+        </details>
+      </div>
+
+      <p class="disclaimer">
+        재미로 보는 집계입니다. 일간·주간은 한국 시간으로 끊고,
+        <b>응원은 안타·홈런을 칠 때마다 바로 올라갑니다.</b>
+        점수는 서버가 매기고, 100점을 <b>1.00</b> 으로 보여 줍니다.
+      </p>
+    </section>
+
+    <footer>
+      안타·홈런을 치면 포인트가 쌓입니다. 홈런은 비거리 m 그대로, 안타는 그 0.4배.
+      <b>응원 포인트는 배트를 사도 줄지 않습니다.</b>
+    </footer>
+
+    <script type="module" src="shop.js"></script>
+  </body>
+</html>

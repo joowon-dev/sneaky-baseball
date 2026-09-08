@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   createGame, startPitch, swing, tick, settle, progress,
-  idle, nextPitchAt, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, OUTCOME_MS,
+  idle, nextPitchAt, setPowerMul, READY, PITCHING, RESULT, RESULT_MS, WINDUP_MS, OUTCOME_MS,
 } from '../src/game/engine.js'
 import { HOMERUN, HIT, OUT, FOUL, WHIFF, WINDOWS } from '../src/game/judge.js'
 import { battedFlight, clearsFence, meters, TIME_SCALE } from '../src/game/batted.js'
 import { chase } from '../src/game/fielder.js'
+import { createWallet, earn } from '../src/game/wallet.js'
 
 const PITCH = { type: 'fastball', label: '직구', flightMs: 900, breakX: 0, breakY: 0 }
 const T0 = 1_000
@@ -284,5 +285,77 @@ describe('아웃', () => {
 
   it('야수가 못 닿는 힘없는 타구는 안타로 남는다', () => {
     expect(swingWith(safeErrorMs()).lastResult.result).toBe(HIT)
+  })
+})
+
+describe('배트를 끼면 — 기록은 둘로 갈린다', () => {
+  it('맨손이면 두 기록이 같이 오른다', () => {
+    const s = swingWith(0)
+    expect(s.bestMeters).toBe(158)
+    expect(s.bestGearedMeters).toBe(158)
+  })
+
+  it('센 배트로 친 타구는 장비 기록만 올린다 — 맨몸 기록의 잣대가 흔들리면 안 된다', () => {
+    const s = swingWith(0, { powerMul: 1.16 })
+    expect(s.lastResult.meters).toBe(212)
+    expect(s.bestGearedMeters).toBe(212)
+    expect(s.bestMeters).toBe(0)
+  })
+
+  it('센 배트로 쳐도 예전 맨몸 기록은 그대로 남는다', () => {
+    const s = swingWith(0, { powerMul: 1.16, bestMeters: 140 })
+    expect(s.bestMeters).toBe(140)
+  })
+
+  it('배수가 판정에 실제로 들어간다 — 맨손이면 아웃인 타구가 카본이면 홈런이다', () => {
+    expect(swingWith(25).lastResult.result).not.toBe(HOMERUN)
+    expect(swingWith(25, { powerMul: 1.16 }).lastResult.result).toBe(HOMERUN)
+  })
+})
+
+describe('setPowerMul', () => {
+  it('배트를 바꾸면 배수가 갈린다', () => {
+    expect(setPowerMul(createGame(), 1.08).powerMul).toBe(1.08)
+  })
+
+  it('같은 배트면 상태를 새로 만들지 않는다', () => {
+    const s = createGame()
+    expect(setPowerMul(s, 1)).toBe(s)
+  })
+
+  it('말이 안 되는 값은 맨손으로 돌린다 — 저장된 값이 깨져도 게임은 돈다', () => {
+    expect(setPowerMul(createGame({ powerMul: 1.16 }), 0).powerMul).toBe(1)
+    expect(setPowerMul(createGame({ powerMul: 1.16 }), NaN).powerMul).toBe(1)
+  })
+})
+
+// 게임이 낸 결과를 지갑이 받는 자리. app.js 의 award() 가 하는 일이 이것뿐이라,
+// 둘을 붙여 놓고 「이 타구가 몇 점인가」를 값으로 못 박는다.
+describe('결과 → 포인트', () => {
+  const pay = (state, team = 'lotte') =>
+    earn(createWallet(), state.lastResult.result, state.lastResult.meters, team)
+
+  it('퍼펙트 홈런 158m 는 158P 를 주고, 롯데에 158P 를 넣는다', () => {
+    const { wallet, gained } = pay(swingWith(0))
+    expect(gained).toBe(158)
+    expect(wallet.points).toBe(158)
+    expect(wallet.cheer).toEqual({ lotte: 158 })
+  })
+
+  it('힘없이 맞은 안타는 비거리의 0.4배만 준다', () => {
+    const s = swingWith(70)
+    expect(s.lastResult.result).toBe(HIT)
+    expect(pay(s).gained).toBe(Math.round(s.lastResult.meters * 0.4))
+  })
+
+  it('아웃·헛스윙은 한 점도 안 준다 — 아웃은 잃는 것도 얻는 것도 없다', () => {
+    const out = swingWith(25)
+    expect(out.lastResult.result).toBe(OUT)
+    expect(pay(out).gained).toBe(0)
+    expect(pay(swingWith(400)).gained).toBe(0)
+  })
+
+  it('센 배트로 친 홈런은 그만큼 더 준다 — 장비가 곧 응원이다', () => {
+    expect(pay(swingWith(0, { powerMul: 1.16 })).gained).toBe(212)
   })
 })
