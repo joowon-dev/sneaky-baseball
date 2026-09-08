@@ -1,44 +1,59 @@
 import { describe, it, expect } from 'vitest'
 import {
-  pendingDeltas, hasPending, mergeSent, newSecret, defaultNickname,
-  recoveryCode, parseRecoveryCode,
+  enqueueHit, headHit, dropHead, sendableHit, MAX_PENDING,
+  newSecret, defaultNickname, recoveryCode, parseRecoveryCode,
 } from '../src/game/sync.js'
 
 /** 정해진 바이트를 돌려주는 난수. 테스트가 결정론이어야 한다. */
 const bytesOf = (...values) => (length) =>
   Uint8Array.from({ length }, (_, i) => values[i % values.length])
 
-describe('pendingDeltas', () => {
-  it('아직 안 보낸 몫만 준다', () => {
-    expect(pendingDeltas({ lotte: 500, kia: 120 }, { lotte: 300 }))
-      .toEqual({ lotte: 200, kia: 120 })
+const hit = (meters, result = 'homerun') => ({ team: 'lotte', result, meters })
+
+describe('보낼 줄', () => {
+  it('친 순서대로 줄을 선다', () => {
+    const queue = enqueueHit(enqueueHit([], hit(100)), hit(120))
+    expect(queue).toEqual([hit(100), hit(120)])
+    expect(headHit(queue)).toEqual(hit(100))
+    expect(dropHead(queue)).toEqual([hit(120)])
   })
 
-  it('다 보냈으면 아무것도 안 준다 — 조용해야 한다', () => {
-    expect(pendingDeltas({ lotte: 500 }, { lotte: 500 })).toEqual({})
-    expect(hasPending({ lotte: 500 }, { lotte: 500 })).toBe(false)
+  it('빈 줄에는 보낼 것이 없다', () => {
+    expect(headHit([])).toBeNull()
+    expect(dropHead([])).toEqual([])
   })
 
-  it('보낸 값이 더 크면 음수를 만들지 않는다', () => {
-    expect(pendingDeltas({ lotte: 100 }, { lotte: 400 })).toEqual({})
+  it('원래 줄을 건드리지 않는다', () => {
+    const queue = [hit(100)]
+    enqueueHit(queue, hit(120))
+    dropHead(queue)
+    expect(queue).toEqual([hit(100)])
+  })
+
+  // 오래 오프라인이어도 저장이 부풀면 안 된다. 그리고 버릴 것은 **오래된 쪽**이다.
+  it('줄이 넘치면 오래된 것부터 버린다', () => {
+    let queue = []
+    for (let i = 0; i < MAX_PENDING + 5; i += 1) queue = enqueueHit(queue, hit(i + 1))
+    expect(queue).toHaveLength(MAX_PENDING)
+    expect(queue[0].meters).toBe(6)
+    expect(queue[MAX_PENDING - 1].meters).toBe(MAX_PENDING + 5)
   })
 })
 
-describe('mergeSent', () => {
-  // 이게 이 모듈의 핵심이다. cheer 를 통째로 복사하면 보내는 사이에 쌓인 몫이 사라진다.
-  it('보낸 만큼만 더한다 — 보내는 사이에 더 친 몫은 다음에 간다', () => {
-    const sent = { lotte: 300 }
-    const deltas = { lotte: 200 }
-    // 보내는 동안 홈런을 더 쳐서 cheer 는 이미 600 이 됐다고 하자.
-    const next = mergeSent(sent, deltas)
-    expect(next).toEqual({ lotte: 500 })
-    expect(pendingDeltas({ lotte: 600 }, next)).toEqual({ lotte: 100 })
+describe('sendableHit', () => {
+  it('홈런과 안타만 보낸다 — 나머지는 애초에 0점이다', () => {
+    expect(sendableHit(hit(158))).toBe(true)
+    expect(sendableHit(hit(80, 'hit'))).toBe(true)
+    expect(sendableHit(hit(150, 'out'))).toBe(false)
+    expect(sendableHit(hit(20, 'foul'))).toBe(false)
+    expect(sendableHit(hit(0, 'whiff'))).toBe(false)
   })
 
-  it('원래 값을 건드리지 않는다', () => {
-    const sent = { lotte: 300 }
-    mergeSent(sent, { lotte: 200 })
-    expect(sent).toEqual({ lotte: 300 })
+  it('비거리가 0이거나 정수가 아니면 안 보낸다', () => {
+    expect(sendableHit(hit(0))).toBe(false)
+    expect(sendableHit(hit(-5))).toBe(false)
+    expect(sendableHit(hit(12.5))).toBe(false)
+    expect(sendableHit(null)).toBe(false)
   })
 })
 

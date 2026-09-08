@@ -1,35 +1,42 @@
 // 서버에 무엇을 보낼지 정하는 순수 모듈. 네트워크는 모른다 — `src/net/ranking.js` 가 한다.
 //
-// **총량이 아니라 델타를 보낸다.** 총량을 그대로 올리면 재시도 한 번이 곧 중복 적립이고,
-// 기기를 두 대 쓰는 사람의 값이 서로를 덮어쓴다. 그래서 「지금까지 보낸 값」(sent)을 따로
-// 들고, 그 차이만 올린 뒤 성공했을 때만 옮겨 적는다.
+// **타구 하나를 친 그때 하나씩 올린다.** 예전엔 구단별 누적을 5분마다 올렸는데,
+// 그러면 클라이언트가 계산해 둔 숫자를 서버가 그대로 받아 적게 된다 —
+// 앱을 뜯은 사람이 아무 값이나 넣을 수 있는 자리였다.
+// 지금은 「무슨 결과를 몇 미터 쳤는지」만 보내고 점수는 서버가 매긴다.
+//
+// 못 보낸 타구는 줄을 서서 기다린다. 오프라인에서 친 것도 다음에 올라간다.
 
-/** 아직 안 보낸 몫. 구단별로 `cheer - sent` 다. */
-export function pendingDeltas(cheer = {}, sent = {}) {
-  const out = {}
-  for (const [team, total] of Object.entries(cheer)) {
-    const delta = Math.floor(total) - Math.floor(sent[team] ?? 0)
-    if (delta > 0) out[team] = delta
-  }
-  return out
+/**
+ * 줄의 최대 길이. 오래 오프라인이어도 메모리와 저장이 부풀지 않게 막는다.
+ * 넘치면 **오래된 것부터 버린다** — 방금 친 타구가 안 올라가는 쪽이 더 이상하다.
+ */
+export const MAX_PENDING = 200
+
+/** 줄에 세운다. 넘치면 앞에서 버린다. */
+export function enqueueHit(queue, hit) {
+  const next = [...queue, hit]
+  return next.length > MAX_PENDING ? next.slice(next.length - MAX_PENDING) : next
 }
 
-/** 보낼 것이 있는가. 없으면 아예 부르지 않는다 — 조용한 앱이어야 한다. */
-export function hasPending(cheer, sent) {
-  return Object.keys(pendingDeltas(cheer, sent)).length > 0
+/** 맨 앞 하나. 없으면 null. */
+export function headHit(queue) {
+  return queue.length > 0 ? queue[0] : null
+}
+
+/** 맨 앞을 보냈다. 줄에서 뺀다. */
+export function dropHead(queue) {
+  return queue.slice(1)
 }
 
 /**
- * 보내기가 **성공한 뒤에만** 부른다. 보낸 만큼을 sent 에 더한다.
- * cheer 를 그대로 복사하지 않는다 — 보내는 사이에 더 쌓였을 수 있고,
- * 그 몫까지 보냈다고 적으면 영영 사라진다.
+ * 서버가 받아 주는 모양인가. 여기서 한 번 거르면 서버에 헛걸음을 안 한다.
+ * **아웃·파울·헛스윙은 애초에 0점이라 보내지 않는다.**
  */
-export function mergeSent(sent = {}, deltas = {}) {
-  const out = { ...sent }
-  for (const [team, points] of Object.entries(deltas)) {
-    out[team] = (out[team] ?? 0) + points
-  }
-  return out
+export function sendableHit(hit) {
+  if (!hit) return false
+  if (hit.result !== 'homerun' && hit.result !== 'hit') return false
+  return Number.isInteger(hit.meters) && hit.meters > 0
 }
 
 const SECRET_ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789'

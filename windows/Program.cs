@@ -312,8 +312,11 @@ sealed class Overlay : Form
     private string? playerId;
     private string? playerSecret;
     private string? nickname;
-    /// <summary>지금까지 서버에 보낸 몫. 응원 원장에서 이만큼을 뺀 것이 다음에 올릴 델타다.</summary>
-    private Dictionary<string, int> cheerSent = new();
+    /// <summary>
+    /// 아직 못 보낸 타구 줄. 평소에는 칠 때마다 바로 올라가고, 못 보낸 것만 여기 남는다.
+    /// 저장은 셸이 하고, 보내는 일은 게임이 한다 — 그래서 모양을 들여다보지 않고 그대로 실어 나른다.
+    /// </summary>
+    private JsonElement? pendingHits;
     public event Action? GearChanged;
 
     /// <summary>상점 — 오버레이가 아니라 보통 창이다. 클릭 통과에 예외를 파지 않는다.</summary>
@@ -407,7 +410,7 @@ sealed class Overlay : Form
         owned,
         equipped,
         cheer,
-        cheerSent,
+        pending = pendingHits,
         // 랭킹 신분은 있을 때만 싣는다. 없으면 게임이 처음 보낼 때 만든다.
         account = playerId is null || playerSecret is null
             ? null
@@ -573,11 +576,10 @@ sealed class Overlay : Form
           }),
           onGear: (handler) => { window.__sneakyGear = handler },
           saveAccount: (a) => window.chrome.webview.postMessage({
-            type: 'account', playerId: a.playerId, secret: a.secret,
-            nickname: a.nickname, cheerSent: a.cheerSent,
+            type: 'account', playerId: a.playerId, secret: a.secret, nickname: a.nickname,
           }),
-          saveSynced: (sent) => window.chrome.webview.postMessage({
-            type: 'synced', cheerSent: sent,
+          savePending: (hits) => window.chrome.webview.postMessage({
+            type: 'pending', hits,
           }),
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
@@ -701,19 +703,17 @@ sealed class Overlay : Form
                 playerId = id;
                 playerSecret = secret;
                 nickname = body.TryGetProperty("nickname", out var nk) ? nk.GetString() : null;
-                // 복구 코드로 다른 기기의 기록을 이어받으면, 여기서 쌓인 응원은 아직 안 보낸 것으로 친다.
-                if (body.TryGetProperty("cheerSent", out var cs) && cs.ValueKind == JsonValueKind.Object)
-                    cheerSent = cs.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32());
+                // 줄에 선 타구는 그대로 둔다 — 진짜로 친 것이니 새 이름으로 올라가면 된다.
                 PushGear();
                 return;
             }
 
-            // 서버에 올리기가 성공했다. 보낸 만큼만 옮겨 적는다.
-            if (type == "synced")
+            // 못 보낸 타구 줄이 바뀌었다. 저장만 한다.
+            if (type == "pending")
             {
-                if (body.TryGetProperty("cheerSent", out var sent) && sent.ValueKind == JsonValueKind.Object)
+                if (body.TryGetProperty("hits", out var hits) && hits.ValueKind == JsonValueKind.Array)
                 {
-                    cheerSent = sent.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32());
+                    pendingHits = hits.Clone();
                     WriteState();
                 }
                 return;
@@ -944,9 +944,9 @@ sealed class Overlay : Form
             cheer = json.TryGetProperty("cheer", out var ch) && ch.ValueKind == JsonValueKind.Object
                 ? ch.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32())
                 : new Dictionary<string, int>();
-            cheerSent = json.TryGetProperty("cheerSent", out var cs2) && cs2.ValueKind == JsonValueKind.Object
-                ? cs2.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32())
-                : new Dictionary<string, int>();
+            pendingHits = json.TryGetProperty("pending", out var pd) && pd.ValueKind == JsonValueKind.Array
+                ? pd.Clone()
+                : null;
             playerId = json.TryGetProperty("playerId", out var pid) ? pid.GetString() : null;
             playerSecret = json.TryGetProperty("playerSecret", out var psec) ? psec.GetString() : null;
             nickname = json.TryGetProperty("nickname", out var nn) ? nn.GetString() : null;
@@ -972,7 +972,7 @@ sealed class Overlay : Form
                 owned,
                 equipped,
                 cheer,
-                cheerSent,
+                pending = pendingHits,
                 playerId,
                 playerSecret,
                 nickname,

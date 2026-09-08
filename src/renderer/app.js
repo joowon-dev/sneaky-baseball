@@ -8,8 +8,10 @@ import { draw, layout, setKeyHint } from '../render/draw.js'
 import { kitOf } from '../render/teams.js'
 import { batOf } from '../game/gear.js'
 import { createWallet, earn, teamIdOf, powerMul as walletPowerMul } from '../game/wallet.js'
-import { pendingDeltas, hasPending, mergeSent, newSecret, defaultNickname } from '../game/sync.js'
-import { registerPlayer, submitCheer, randomBytes } from '../net/ranking.js'
+import {
+  enqueueHit, headHit, dropHead, sendableHit, newSecret, defaultNickname,
+} from '../game/sync.js'
+import { registerPlayer, submitHit, randomBytes } from '../net/ranking.js'
 
 const RECORD_KEY = 'sneaky-baseball:record'
 const PITCHER_KEY = 'sneaky-baseball:pitcherX'
@@ -31,10 +33,10 @@ let kitKeys = { batter: null, pitcher: null }
 let wallet = createWallet()
 // 이미 점수를 준 타구. 결과 객체는 칠 때마다 새로 만들어지므로 같은 것인지로 가린다.
 let lastAwarded = null
-// 랭킹 신분과 「지금까지 보낸 몫」. 셸이 저장하고, 여기서는 보낼 때만 쓴다.
+// 랭킹 신분과 아직 못 보낸 타구 줄. 셸이 저장하고, 여기서는 보낼 때만 쓴다.
 let account = null
-let cheerSent = {}
-// 한 번에 하나만 올린다 — 겹쳐 보내면 같은 몫이 두 번 갈 수 있다.
+let pending = []
+// 한 번에 하나만 올린다 — 겹쳐 보내면 같은 타구가 두 번 갈 수 있다.
 let syncing = false
 // 투수가 선 자리. 드래그로 옮기면 던지는 거리가 바뀌고 공이 오는 시간도 바뀐다.
 let pitcherX = PITCHER_X_BASE
@@ -70,19 +72,29 @@ function setKit(who, key) {
 function setWallet(next) {
   wallet = createWallet(next)
   state = setPowerMul(state, walletPowerMul(wallet))
-  // 랭킹에 쓰는 것들은 지갑과 같은 상자에 실려 온다.
+  // 랭킹 신분은 지갑과 같은 상자에 실려 온다.
   if (next?.account?.playerId && next.account.secret) account = next.account
-  if (next?.cheerSent) cheerSent = { ...next.cheerSent }
+  // **대기 줄은 여기서 안 받는다.** 셸이 지갑을 되밀 때(pushGear) 실려 오는 줄은
+  // 방금 넣은 타구가 아직 저장되기 전의 옛 줄이라, 받아 적으면 그 타구가 사라진다.
+  // 줄의 정본은 이 창이 들고 있고, 셸은 저장만 한다. 처음 한 번만 boot 에서 읽는다.
+}
+
+function savePending() {
+  window.sneaky?.savePending?.(pending)
+  if (!window.sneaky) persistWallet()
 }
 
 /**
- * 쌓인 응원을 서버로 올린다. **총량이 아니라 델타**를 올리고, 성공했을 때만 옮겨 적는다.
+ * 줄에 선 타구를 앞에서부터 하나씩 올린다.
  *
- * 실패는 조용히 삼킨다 — 랭킹이 안 되는 것과 게임이 안 되는 것은 다른 일이다.
- * 다음 차례에 그대로 다시 올라간다.
+ * **점수는 안 보낸다** — 무슨 결과를 몇 미터 쳤는지만 보내고 서버가 매긴다.
+ * 클라이언트가 계산한 점수를 그대로 받아 적게 두면, 앱을 뜯은 사람이 아무 값이나 넣는다.
+ *
+ * 실패하면 줄에 그대로 두고 물러난다 — 랭킹이 안 되는 것과 게임이 안 되는 것은 다른 일이다.
+ * 다음 타구를 칠 때나 1분 뒤에 다시 올린다.
  */
-async function syncCheer() {
-  if (syncing || !hasPending(wallet.cheer, cheerSent)) return
+async function flushHits() {
+  if (syncing || pending.length === 0) return
   syncing = true
 
   try {
@@ -92,18 +104,20 @@ async function syncCheer() {
       const nickname = defaultNickname(randomBytes)
       const playerId = await registerPlayer(nickname, secret)
       account = { playerId, secret, nickname }
-      window.sneaky?.saveAccount?.({ ...account, cheerSent })
+      window.sneaky?.saveAccount?.(account)
     }
 
-    const deltas = pendingDeltas(wallet.cheer, cheerSent)
-    await submitCheer(account.playerId, account.secret, deltas)
-
-    // 보내는 사이에 더 친 몫은 다음 차례에 간다 — 그래서 cheer 를 복사하지 않고 델타만 더한다.
-    cheerSent = mergeSent(cheerSent, deltas)
-    window.sneaky?.saveSynced?.(cheerSent)
-    if (!window.sneaky) persistWallet()
+    while (pending.length > 0) {
+      const hit = headHit(pending)
+      // 모양이 틀린 것은 서버에 헛걸음하지 말고 여기서 버린다.
+      if (sendableHit(hit)) {
+        await submitHit(account.playerId, account.secret, hit.team, hit.result, hit.meters)
+      }
+      pending = dropHead(pending)
+      savePending()
+    }
   } catch {
-    // 다음 차례에 다시 올린다.
+    // 줄은 그대로 둔다. 다음 차례에 앞에서부터 다시 올라간다.
   } finally {
     syncing = false
   }
@@ -111,7 +125,7 @@ async function syncCheer() {
 
 function persistWallet() {
   try {
-    localStorage.setItem(WALLET_KEY, JSON.stringify({ ...wallet, account, cheerSent }))
+    localStorage.setItem(WALLET_KEY, JSON.stringify({ ...wallet, account, pending }))
   } catch {
     // 저장에 실패해도 게임은 계속된다.
   }
@@ -134,6 +148,12 @@ function award() {
   wallet = next
   if (window.sneaky?.earn) window.sneaky.earn({ points: gained, team })
   else persistWallet()
+
+  // **친 그 자리에서 바로 올린다.** 유니폼을 안 입었으면 적립할 구단이 없어 안 보낸다.
+  if (!team) return
+  pending = enqueueHit(pending, { team, result: res.result, meters: res.meters })
+  savePending()
+  flushHits()
 }
 
 function resize() {
@@ -336,7 +356,11 @@ async function boot() {
   }
   state = createGame({ ...savedBest })
 
-  setWallet(await loadWallet())
+  const gear = await loadWallet()
+  // 지난번에 못 보내고 남은 타구. 이 뒤로는 이 창이 줄의 정본이다.
+  pending = Array.isArray(gear.pending) ? [...gear.pending] : []
+  setWallet(gear)
+  flushHits()
 
   if (window.sneaky) setPitcherX(window.sneaky.pitcherX ?? PITCHER_X_BASE)
   else {
@@ -351,10 +375,8 @@ async function boot() {
   requestAnimationFrame(frame)
 }
 
-// 5분마다 올린다. 홈런마다 보내면 네트워크가 눈에 띈다 — 몰래 하는 앱이 몰래 하지 못하게 된다.
-const SYNC_EVERY_MS = 5 * 60 * 1000
-setInterval(syncCheer, SYNC_EVERY_MS)
-// 처음 한 번은 조금 일찍 — 켜자마자 끄는 사람의 기록도 남아야 한다.
-setTimeout(syncCheer, 30 * 1000)
+// 못 보내고 줄에 남은 것을 1분마다 다시 올린다. 평소에는 칠 때마다 바로 올라가므로
+// 이 타이머는 **네트워크가 끊겼다 돌아왔을 때만** 할 일이 있다.
+setInterval(flushHits, 60 * 1000)
 
 boot()

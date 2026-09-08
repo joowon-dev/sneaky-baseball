@@ -12,7 +12,7 @@ import { drawFigure, batterStance } from '../render/sprites.js'
 import { kitOf, TEAMS } from '../render/teams.js'
 import { recoveryCode, parseRecoveryCode } from '../game/sync.js'
 import {
-  PERIODS, teamRanking, playerRanking, myStanding, setNickname, submitCheer,
+  PERIODS, teamRanking, playerRanking, myStanding, setNickname, verifyCode,
 } from '../net/ranking.js'
 
 const WALLET_KEY = 'sneaky-baseball:wallet'
@@ -25,8 +25,6 @@ let wallet = createWallet()
 let kit = null
 // 랭킹 신분. 아직 한 번도 안 올렸으면 null 이다 — 안 치는 사람은 서버에 흔적조차 없다.
 let account = null
-// 지금까지 서버에 보낸 몫. 이어받기를 할 때 이 값을 다시 적어 준다.
-let cheerSent = {}
 let period = 'day'
 let loadingRank = false
 
@@ -152,7 +150,6 @@ function preview(canvas, bat) {
 function setWallet(next) {
   wallet = createWallet(next)
   if (next?.account?.playerId) account = next.account
-  if (next?.cheerSent) cheerSent = { ...next.cheerSent }
   render()
   renderAccount()
 }
@@ -306,7 +303,7 @@ document.getElementById('save-nickname').addEventListener('click', async () => {
   try {
     await setNickname(account.playerId, account.secret, name)
     account = { ...account, nickname: name }
-    window.sneaky?.saveAccount?.({ ...account, cheerSent })
+    window.sneaky?.saveAccount?.(account)
     say(nicknameMsgEl, '바꿨습니다')
     loadRanking()
   } catch (error) {
@@ -324,12 +321,12 @@ document.getElementById('do-restore').addEventListener('click', async () => {
     return
   }
   try {
-    // 빈 델타를 올려 신분만 확인한다. 맞으면 아무 일도 안 일어난다.
-    await submitCheer(parsed.playerId, parsed.secret, {})
+    // 코드가 맞는지만 물어본다. 맞아도 서버에는 아무 일도 안 일어난다.
+    const ok = await verifyCode(parsed.playerId, parsed.secret)
+    if (!ok) throw new Error('bad code')
     account = { ...parsed, nickname: '' }
-    // **여기 쌓인 응원은 이미 보낸 것으로 친다.** 안 그러면 이 기기의 누적이
-    // 이어받은 신분으로 한 번 더 올라가 전체 집계가 부풀어 오른다.
-    window.sneaky?.saveAccount?.({ ...account, cheerSent: { ...wallet.cheer } })
+    // 줄에 선 타구는 그대로 둔다 — 진짜로 친 것이니 이 이름으로 올라가면 된다.
+    window.sneaky?.saveAccount?.(account)
     restoreEl.value = ''
     say(restoreMsgEl, '이어받았습니다. 이제부터 친 것이 이 이름으로 올라갑니다')
     renderAccount()

@@ -4,7 +4,8 @@
 // 그 함수들이 서버에서 신분을 확인하고 상한을 건다. 그래서 이 키가 밖에 나가도
 // 남의 기록을 고치거나 남의 비밀을 읽을 수 없다.
 //
-// 보내는 것: 기기가 만든 무작위 uuid, 구단별 증가분, 별명. **개인을 식별할 수 있는 것은 없다.**
+// 보내는 것: 기기가 만든 무작위 uuid, 타구 하나(결과·비거리·구단), 별명.
+// **개인을 식별할 수 있는 것은 없고, 점수도 안 보낸다** — 점수는 서버가 매긴다.
 
 export const RANKING_URL = 'https://xajmblrdkdnqoxfvsfrt.supabase.co'
 // 공개되도록 만들어진 키다(웹 앱이 브라우저에 담고 다니는 것과 같은 성질).
@@ -59,8 +60,20 @@ export function setNickname(playerId, secret, nickname) {
   return rpc('set_nickname', { p_player: playerId, p_secret: secret, p_nickname: nickname })
 }
 
-export function submitCheer(playerId, secret, deltas) {
-  return rpc('submit_cheer', { p_player: playerId, p_secret: secret, p_deltas: deltas })
+/**
+ * 타구 하나를 그때그때 올린다.
+ * **점수는 안 보낸다** — 무슨 결과를 몇 미터 쳤는지만 보내고, 서버가 규칙대로 매긴다.
+ * 클라이언트가 계산한 점수를 그대로 받아 적으면 앱을 뜯은 사람이 아무 숫자나 넣을 수 있다.
+ */
+export function submitHit(playerId, secret, team, result, meters) {
+  return rpc('submit_hit', {
+    p_player: playerId, p_secret: secret, p_team: team, p_result: result, p_meters: meters,
+  })
+}
+
+/** 복구 코드가 맞는지만 본다. */
+export function verifyCode(playerId, secret) {
+  return rpc('verify_code', { p_player: playerId, p_secret: secret })
 }
 
 export function teamRanking(period = 'all') {
