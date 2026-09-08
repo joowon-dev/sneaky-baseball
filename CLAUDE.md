@@ -195,14 +195,25 @@
   기간은 일간·주간·연간·전체이고 **한국 시간으로 끊는다**(UTC 로 끊으면 새벽에 판이 바뀐다).
   CSP `connect-src` 를 그 주소 하나로 못 박아 앱이 다른 데로는 못 붙는다.
 
+- **업데이트**: 켠 지 20초 뒤 한 번, 그 뒤로 하루 한 번 GitHub Releases API 에 물어본다.
+  **두 단계이고, 눌러야만 갈아 낀다** — 몰래 하는 게임에 자동 재시작만큼 눈에 띄는 것도 없다.
+  1단계는 트레이에 「새 버전 v1.2.0 설치」를 내는 것뿐이고(없으면 메뉴에 아무 흔적도 없다),
+  2단계는 눌렀을 때 받아서 갈아 끼우는 것이다. 맥은 **zip**, 윈도우는 **설치본**을 받는다 —
+  dmg 를 마운트해 자기를 갈아 끼우면 실패할 자리가 너무 많다.
+  **맥은 `spctl` 로 서명을 검사하고, 거절되면 아무것도 건드리지 않고 릴리스 페이지만 연다.**
+  남의 zip 을 받아 자기 자리에 넣는 일은 절대 없어야 한다. 권한이 없어 교체에 실패할 때도 같다.
+  버전은 **숫자로** 비교한다 — 문자열로 비교하면 1.10 이 1.9 보다 작다.
+
 ## 실행
 ```
 npm test           # 순수 모듈 단위 테스트 (vitest)
 npm start          # 맥 앱을 빌드해서 띄운다 (mac/build.sh)
 npm run build:mac  # dist/SneakyBaseball-mac.zip 까지
+npm run dmg        # dist/SneakyBaseball-mac.dmg (임시 서명. 배포용 아님)
 npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ico)
-./mac/notarize.sh  # 서명 → 애플 공증 → 스테이플 (배포용 맥 zip 은 반드시 이걸로)
+./mac/notarize.sh  # 서명 → 공증 → 스테이플. zip 과 dmg 를 **따로** 공증한다 (배포용은 이것)
 ```
+윈도우 설치본은 `iscc /DAppVersion=1.2.0 windows/installer.iss` (Inno Setup 6, 윈도우에서만).
 윈도우 빌드는 윈도우에서만 된다 — `.github/workflows/release.yml` 가 태그를 밀 때 만든다.
 `SNEAKY_DEBUG=1` 로 셸 로그를, `SNEAKY_PROBE=1` 로 웹뷰 상태를 stderr 에 흘려볼 수 있다.
 
@@ -230,13 +241,16 @@ npm run icons      # 아이콘 다시 그리기 (build/icon.png, windows/icon.ic
 - `docs/superpowers/specs/2026-08-13-kbo-uniforms-design.md` (구단 유니폼)
 - `docs/superpowers/specs/2026-09-08-gear-points-design.md` (포인트와 배트)
 - `docs/superpowers/specs/2026-09-08-cheer-ranking-design.md` (응원 랭킹)
-- `docs/superpowers/specs/2026-09-08-distribution-plan.md` (배포 — 계획)
+- `docs/superpowers/specs/2026-09-08-distribution-design.md` (배포·자동 업데이트)
 
 ## 배포
 - 태그(`v*`)를 밀면 CI가 맥 zip · 윈도우 zip 을 만들어 릴리스에 붙인다.
 - 사이트(joowonkoh.com)의 `/playground/sneaky-baseball` 이 그 릴리스를 가리킨다.
 
 ## 남은 것
+- **윈도우 셸은 한 번도 컴파일된 적이 없다**(이 맥에 `dotnet` 이 없다). 실제 윈도우에서
+  상점 창·랭킹 탭·핫키·투수 드래그·설치본·자동 업데이트를 한 번은 봐야 한다.
+- 윈도우 코드 서명 인증서를 살지는 정해지지 않았다. 없으면 SmartScreen 경고가 남는다.
 - **배포용 맥 zip 은 `./mac/notarize.sh` 로 만든다.** `build.sh` 는 임시(ad-hoc) 서명뿐이라
   그대로 올리면 Gatekeeper 가 막는다 — macOS 15 부터는 우클릭 → 열기 우회도 없어졌다.
   CI 의 맥 산출물도 임시 서명이라 **배포에 쓰면 안 된다**(인증서가 CI 에 없다).

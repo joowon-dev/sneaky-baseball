@@ -115,6 +115,29 @@ private let noKitValue = "none"
 private let screenKey = "screenNumber"
 private let webScheme = "sneaky"
 
+/// 새 버전이 있는지 물어보는 곳. 태그를 밀면 CI 가 여기에 릴리스를 올린다.
+private let releaseAPI = "https://api.github.com/repos/joowon-dev/sneaky-baseball/releases/latest"
+private let releasePage = "https://github.com/joowon-dev/sneaky-baseball/releases/latest"
+/// 자동 업데이트가 받아 가는 것은 zip 이다 — dmg 를 마운트해 자기를 갈아 끼우면 실패할 자리가 너무 많다.
+private let macAssetSuffix = "-mac.zip"
+private let updateCheckInterval: TimeInterval = 24 * 60 * 60
+private let firstUpdateCheckDelay: TimeInterval = 20
+
+/// "v1.2.0" > "1.10.0" 같은 걸 숫자로 비교한다. 문자열로 비교하면 1.10 이 1.9 보다 작다.
+func isNewerVersion(_ candidate: String, than current: String) -> Bool {
+    func parts(_ text: String) -> [Int] {
+        text.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
+            .split(separator: ".").map { Int($0.prefix(while: \.isNumber)) ?? 0 }
+    }
+    let a = parts(candidate), b = parts(current)
+    for i in 0..<max(a.count, b.count) {
+        let x = i < a.count ? a[i] : 0
+        let y = i < b.count ? b[i] : 0
+        if x != y { return x > y }
+    }
+    return false
+}
+
 /// 메뉴에 세울 구단 목록. src/render/teams.js 의 id·name 과 같아야 한다 —
 /// 셸은 게임 코드를 읽지 않으므로 여기 한 벌을 따로 둔다.
 private let teams: [(id: String, name: String)] = [
@@ -181,6 +204,13 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
+    /// 새 버전. 지금보다 높을 때만 채워진다 — 없으면 메뉴에 아무것도 안 낸다.
+    private var updateVersion: String?
+    private var updateAsset: URL?
+    /// 내려받는 중인가. 메뉴를 두 번 누르는 걸 막고, 진행 상태를 글씨로 보여 준다.
+    private var updating = false
+    private var updateNote: String?
+
     /// 상점 — 오버레이가 아니라 보통 창이다. 클릭 통과에 예외를 파지 않는다.
     private var shopWindow: NSWindow?
     private var shopWebView: WKWebView?
@@ -334,6 +364,8 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             self?.pollKeys()
         }
 
+        scheduleUpdateChecks()
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -483,6 +515,149 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         """
     }
 
+    // MARK: 업데이트
+    //
+    // **두 단계로 나눠 뒀다.** 1단계는 「새 버전이 있다」고 알리는 것뿐이고,
+    // 2단계는 눌렀을 때 받아서 갈아 끼우는 것이다. 눌러야만 갈아 끼운다 —
+    // 몰래 하는 게임에 자동 재시작만큼 눈에 띄는 것도 없다.
+
+    private var currentVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
+
+    private func scheduleUpdateChecks() {
+        Timer.scheduledTimer(withTimeInterval: firstUpdateCheckDelay, repeats: false) { [weak self] _ in
+            self?.checkForUpdate()
+        }
+        Timer.scheduledTimer(withTimeInterval: updateCheckInterval, repeats: true) { [weak self] _ in
+            self?.checkForUpdate()
+        }
+    }
+
+    /// 하루 한 번 물어본다. 실패는 조용히 삼킨다 — 새 버전을 못 찾는 것과 게임이 안 되는 것은 다른 일이다.
+    private func checkForUpdate() {
+        guard var request = URL(string: releaseAPI).map({ URLRequest(url: $0) }) else { return }
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+            guard let self, let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tag = json["tag_name"] as? String,
+                  isNewerVersion(tag, than: self.currentVersion)
+            else { return }
+
+            let assets = json["assets"] as? [[String: Any]] ?? []
+            let zip = assets.first { ($0["name"] as? String)?.hasSuffix(macAssetSuffix) == true }
+            let url = (zip?["browser_download_url"] as? String).flatMap(URL.init(string:))
+
+            DispatchQueue.main.async {
+                debugLog("새 버전 \(tag)")
+                self.updateVersion = tag
+                self.updateAsset = url
+                self.refreshMenu()
+            }
+        }.resume()
+    }
+
+    /// 2단계 — 받아서 갈아 끼운다. 어느 한 걸음이라도 어긋나면 **손대지 않고** 릴리스 페이지를 연다.
+    @objc private func installUpdate() {
+        guard !updating else { return }
+        guard let asset = updateAsset else {
+            openReleasePage()
+            return
+        }
+        updating = true
+        updateNote = "내려받는 중…"
+        refreshMenu()
+
+        URLSession.shared.downloadTask(with: asset) { [weak self] location, _, error in
+            guard let self else { return }
+            guard let location, error == nil else {
+                DispatchQueue.main.async { self.updateFailed() }
+                return
+            }
+            // 임시 파일은 이 블록이 끝나면 사라진다. 옆에 옮겨 두고 푼다.
+            let work = FileManager.default.temporaryDirectory
+                .appendingPathComponent("sneaky-update-\(UUID().uuidString)")
+            let zip = work.appendingPathComponent("app.zip")
+            do {
+                try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+                try FileManager.default.moveItem(at: location, to: zip)
+            } catch {
+                DispatchQueue.main.async { self.updateFailed() }
+                return
+            }
+            DispatchQueue.main.async { self.swapIn(zip: zip, work: work) }
+        }.resume()
+    }
+
+    private func swapIn(zip: URL, work: URL) {
+        updateNote = "설치하는 중…"
+        refreshMenu()
+
+        let unpacked = work.appendingPathComponent("unpacked")
+        guard run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path]) == 0,
+              let newApp = (try? FileManager.default.contentsOfDirectory(at: unpacked,
+                                                                        includingPropertiesForKeys: nil))?
+                  .first(where: { $0.pathExtension == "app" })
+        else {
+            updateFailed()
+            return
+        }
+
+        // **받은 것이 애플이 검증한 우리 앱인지 본다.** 여기서 걸리면 갈아 끼우지 않는다 —
+        // 남의 zip 을 받아 자기 자리에 넣는 일은 절대 없어야 한다.
+        guard run("/usr/sbin/spctl", ["--assess", "--type", "execute", newApp.path]) == 0,
+              let id = Bundle(url: newApp)?.bundleIdentifier, id == Bundle.main.bundleIdentifier
+        else {
+            debugLog("업데이트 검증 실패")
+            updateFailed()
+            return
+        }
+
+        let target = Bundle.main.bundleURL
+        do {
+            _ = try FileManager.default.replaceItemAt(target, withItemAt: newApp)
+        } catch {
+            // 대개 권한 문제다(/Applications 밖이거나 다른 사용자 소유).
+            debugLog("바꿔 끼우기 실패 \(error)")
+            updateFailed()
+            return
+        }
+
+        // 새 것을 띄우고 지금 것은 물러난다.
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: target, configuration: config) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
+
+    /// 못 했으면 **아무것도 건드리지 않고** 사람에게 넘긴다.
+    private func updateFailed() {
+        updating = false
+        updateNote = "직접 받기"
+        refreshMenu()
+        openReleasePage()
+    }
+
+    private func openReleasePage() {
+        if let url = URL(string: releasePage) { NSWorkspace.shared.open(url) }
+    }
+
+    @discardableResult
+    private func run(_ path: String, _ args: [String]) -> Int32 {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: path)
+        task.arguments = args
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do { try task.run() } catch { return -1 }
+        task.waitUntilExit()
+        return task.terminationStatus
+    }
+
     // MARK: 메뉴바
 
     private func buildStatusItem() {
@@ -501,6 +676,16 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         menu.addItem(disabled("\(controlKey.title) 을 누르고 있는 동안 투구"))
         menu.addItem(disabled("스윙  \(controlKey.title) + Space"))
         menu.addItem(.separator())
+
+        // 1단계 — 새 버전이 있을 때만 낸다. 없으면 메뉴에 아무 흔적도 없다.
+        if let updateVersion {
+            let title = updateNote ?? "새 버전 \(updateVersion) 설치"
+            let item = NSMenuItem(title: title, action: #selector(installUpdate), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = !updating
+            menu.addItem(item)
+            menu.addItem(.separator())
+        }
 
         let shop = NSMenuItem(title: "배트 상점…", action: #selector(openShop), keyEquivalent: "")
         shop.target = self

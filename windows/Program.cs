@@ -4,8 +4,10 @@
 // 바탕화면을 덮는 투명·클릭 통과 오버레이, 전역 단축키, 트레이 아이콘, 기록 저장.
 // mac/Sources/main.swift 와 같은 일을 하고, 브리지(window.sneaky)도 같은 모양이다.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -40,6 +42,7 @@ sealed class OverlayContext : ApplicationContext
         overlay.KitChanged += () => tray.ContextMenuStrip = BuildMenu();
         overlay.SettingsChanged += () => tray.ContextMenuStrip = BuildMenu();
         overlay.GearChanged += () => tray.ContextMenuStrip = BuildMenu();
+        overlay.UpdateChanged += () => tray.ContextMenuStrip = BuildMenu();
     }
 
     /// <summary>메뉴에 세울 구단 목록. src/render/teams.js 의 id·name 과 같아야 한다.</summary>
@@ -87,6 +90,15 @@ sealed class OverlayContext : ApplicationContext
         menu.Items.Add(new ToolStripMenuItem($"{overlay.HoldKey.Title} 를 누르고 있는 동안 투구") { Enabled = false });
         menu.Items.Add(new ToolStripMenuItem($"스윙  {overlay.HoldKey.Title} + Space") { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
+        // 1단계 — 새 버전이 있을 때만 낸다. 없으면 메뉴에 아무 흔적도 없다.
+        if (overlay.UpdateVersion is not null)
+        {
+            menu.Items.Add(new ToolStripMenuItem(
+                overlay.UpdateNote ?? $"새 버전 {overlay.UpdateVersion} 설치",
+                null, (_, _) => overlay.InstallUpdate())
+            { Enabled = !overlay.Updating });
+            menu.Items.Add(new ToolStripSeparator());
+        }
         menu.Items.Add(new ToolStripMenuItem("배트 상점…", null, (_, _) => overlay.OpenShop()));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(KitMenu("타자 팀", "batter"));
@@ -452,6 +464,13 @@ sealed class Overlay : Form
         holdTimer.Tick += (_, _) => PollKeys();
         holdTimer.Start();
 
+        // 켠 지 20초 뒤에 한 번, 그 뒤로는 하루 한 번.
+        var firstCheck = new System.Windows.Forms.Timer { Interval = 20_000 };
+        firstCheck.Tick += (_, _) => { firstCheck.Stop(); _ = CheckForUpdateAsync(); };
+        firstCheck.Start();
+        updateTimer.Tick += (_, _) => _ = CheckForUpdateAsync();
+        updateTimer.Start();
+
         _ = InitWebAsync();
     }
 
@@ -761,6 +780,147 @@ sealed class Overlay : Form
         {
             // 저장에 실패해도 게임은 계속된다.
         }
+    }
+
+    // MARK: 업데이트
+    //
+    // <b>두 단계로 나눠 뒀다.</b> 1단계는 「새 버전이 있다」고 알리는 것뿐이고,
+    // 2단계는 눌렀을 때 설치본을 받아 조용히 다시 까는 것이다. 눌러야만 깐다 —
+    // 몰래 하는 게임에 자동 재시작만큼 눈에 띄는 것도 없다.
+
+    private const string ReleaseApi = "https://api.github.com/repos/joowon-dev/sneaky-baseball/releases/latest";
+    private const string ReleasePage = "https://github.com/joowon-dev/sneaky-baseball/releases/latest";
+    /// <summary>자동 업데이트가 받아 가는 것은 설치본이다 — zip 은 사람이 직접 풀 때 쓴다.</summary>
+    private const string WinAssetSuffix = "-win-Setup.exe";
+
+    private static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 24 * 60 * 60 * 1000 };
+
+    public string? UpdateVersion { get; private set; }
+    public string? UpdateNote { get; private set; }
+    public bool Updating { get; private set; }
+    private string? updateAsset;
+    public event Action? UpdateChanged;
+
+    private static string CurrentVersion =>
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+
+    /// <summary>"v1.10.0" 이 "1.9.0" 보다 높다. 문자열로 비교하면 거꾸로 나온다.</summary>
+    public static bool IsNewerVersion(string candidate, string current)
+    {
+        static int[] Parts(string text) => text.TrimStart('v', 'V', ' ')
+            .Split('.')
+            .Select(p => int.TryParse(new string(p.TakeWhile(char.IsDigit).ToArray()), out var n) ? n : 0)
+            .ToArray();
+
+        var a = Parts(candidate);
+        var b = Parts(current);
+        for (var i = 0; i < Math.Max(a.Length, b.Length); i += 1)
+        {
+            var x = i < a.Length ? a[i] : 0;
+            var y = i < b.Length ? b[i] : 0;
+            if (x != y) return x > y;
+        }
+        return false;
+    }
+
+    /// <summary>하루 한 번 물어본다. 실패는 조용히 삼킨다.</summary>
+    private async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, ReleaseApi);
+            request.Headers.Add("Accept", "application/vnd.github+json");
+            // GitHub 은 User-Agent 없는 요청을 거절한다.
+            request.Headers.Add("User-Agent", "SneakyBaseball");
+
+            using var response = await http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return;
+
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var tag = json.GetProperty("tag_name").GetString();
+            if (tag is null || !IsNewerVersion(tag, CurrentVersion)) return;
+
+            string? asset = null;
+            if (json.TryGetProperty("assets", out var assets))
+            {
+                foreach (var a in assets.EnumerateArray())
+                {
+                    var name = a.TryGetProperty("name", out var n) ? n.GetString() : null;
+                    if (name is not null && name.EndsWith(WinAssetSuffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        asset = a.GetProperty("browser_download_url").GetString();
+                        break;
+                    }
+                }
+            }
+
+            BeginInvoke(() =>
+            {
+                UpdateVersion = tag;
+                updateAsset = asset;
+                UpdateChanged?.Invoke();
+            });
+        }
+        catch
+        {
+            // 새 버전을 못 찾는 것과 게임이 안 되는 것은 다른 일이다.
+        }
+    }
+
+    /// <summary>2단계 — 받아서 조용히 다시 깐다. 한 걸음이라도 어긋나면 릴리스 페이지를 연다.</summary>
+    public async void InstallUpdate()
+    {
+        if (Updating) return;
+        if (updateAsset is null)
+        {
+            OpenReleasePage();
+            return;
+        }
+
+        Updating = true;
+        UpdateNote = "내려받는 중…";
+        UpdateChanged?.Invoke();
+
+        var path = Path.Combine(Path.GetTempPath(), $"SneakyBaseball-{Guid.NewGuid():N}.exe");
+        try
+        {
+            using (var request = new HttpRequestMessage(HttpMethod.Get, updateAsset))
+            {
+                request.Headers.Add("User-Agent", "SneakyBaseball");
+                using var response = await http.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+                await using var file = File.Create(path);
+                await response.Content.CopyToAsync(file);
+            }
+
+            UpdateNote = "설치하는 중…";
+            UpdateChanged?.Invoke();
+
+            // 조용히 깔고, 돌던 앱을 닫았다가 새것으로 다시 띄운다(installer.iss 가 그렇게 돼 있다).
+            Process.Start(new ProcessStartInfo(path)
+            {
+                Arguments = "/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /NORESTART",
+                UseShellExecute = true,
+            });
+            Application.Exit();
+        }
+        catch
+        {
+            Updating = false;
+            UpdateNote = "직접 받기";
+            UpdateChanged?.Invoke();
+            OpenReleasePage();
+        }
+    }
+
+    private static void OpenReleasePage()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(ReleasePage) { UseShellExecute = true });
+        }
+        catch { }
     }
 
     /// <summary>저장된 값을 키로. "none" 은 사용자가 고른 「유니폼 없음」이다.</summary>
