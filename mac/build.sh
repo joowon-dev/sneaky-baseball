@@ -32,7 +32,7 @@ fi
 echo "› 리소스"
 cp "$root/mac/Info.plist" "$appdir/Contents/Info.plist"
 mkdir -p "$appdir/Contents/Resources/web"
-cp -R "$root/src/game" "$root/src/render" "$root/src/renderer" "$appdir/Contents/Resources/web/"
+cp -R "$root/src/game" "$root/src/render" "$root/src/renderer" "$root/src/shop" "$appdir/Contents/Resources/web/"
 
 # 아이콘: build/icon.png → icns
 if [ -f "$root/build/icon.png" ]; then

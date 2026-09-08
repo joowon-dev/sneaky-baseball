@@ -39,6 +39,7 @@ sealed class OverlayContext : ApplicationContext
         overlay.RecordChanged += _ => tray.ContextMenuStrip = BuildMenu();
         overlay.KitChanged += () => tray.ContextMenuStrip = BuildMenu();
         overlay.SettingsChanged += () => tray.ContextMenuStrip = BuildMenu();
+        overlay.GearChanged += () => tray.ContextMenuStrip = BuildMenu();
     }
 
     /// <summary>메뉴에 세울 구단 목록. src/render/teams.js 의 id·name 과 같아야 한다.</summary>
@@ -80,8 +81,13 @@ sealed class OverlayContext : ApplicationContext
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem($"최고 비거리  {overlay.BestMeters}m") { Enabled = false });
+        if (overlay.BestGearedMeters > overlay.BestMeters)
+            menu.Items.Add(new ToolStripMenuItem($"장비 기록  {overlay.BestGearedMeters}m") { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem($"보유 포인트  {overlay.Points}P") { Enabled = false });
         menu.Items.Add(new ToolStripMenuItem($"{overlay.HoldKey.Title} 를 누르고 있는 동안 투구") { Enabled = false });
         menu.Items.Add(new ToolStripMenuItem($"스윙  {overlay.HoldKey.Title} + Space") { Enabled = false });
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("배트 상점…", null, (_, _) => overlay.OpenShop()));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(KitMenu("타자 팀", "batter"));
         menu.Items.Add(KitMenu("투수 팀", "pitcher"));
@@ -271,7 +277,26 @@ sealed class Overlay : Form
     public double PitcherX { get; private set; } = DefaultPitcherX;
 
     public int BestMeters { get; private set; }
+    /// <summary>
+    /// 장비를 끼고 세운 기록. 맨몸 기록과 따로 둔다 — 배트를 사면 홈런이 쉬워지므로
+    /// 한 칸에 섞으면 옛 기록과 새 기록의 잣대가 달라진다.
+    /// </summary>
+    public int BestGearedMeters { get; private set; }
     public event Action<int>? RecordChanged;
+
+    /// <summary>지갑. 안타·홈런으로 쌓이고 배트를 사면 준다.</summary>
+    public int Points { get; private set; }
+    /// <summary>가진 배트. 맨손(bare)은 언제나 가지고 있다.</summary>
+    private List<string> owned = new() { DefaultBat };
+    private string equipped = DefaultBat;
+    /// <summary>구단별 응원 원장. <b>줄어드는 일이 없다</b> — 배트를 사도 그대로다.</summary>
+    private Dictionary<string, int> cheer = new();
+    private const string DefaultBat = "bare";
+    public event Action? GearChanged;
+
+    /// <summary>상점 — 오버레이가 아니라 보통 창이다. 클릭 통과에 예외를 파지 않는다.</summary>
+    private ShopWindow? shop;
+    private CoreWebView2Environment? env;
 
     /// <summary>'lg-home' 같은 키. null 이면 유니폼 없음(검은 실루엣).</summary>
     /// <summary>처음 깔았을 때 입고 나오는 유니폼. 타자·투수를 홈·원정으로 갈라 둬야 둘이 구분된다.</summary>
@@ -343,8 +368,53 @@ sealed class Overlay : Form
         // Send 는 숨어 있을 때 삼켜 버린다. 유니폼은 숨긴 채로도 바꿀 수 있어야 하므로
         // 보이는지와 무관하게 밀어 넣는다 — 다시 띄웠을 때 이미 갈아입고 있다.
         var literal = key is null ? "null" : $"'{key}'";
-        if (ready) _ = web.ExecuteScriptAsync($"window.__sneakyKit && window.__sneakyKit('{who}', {literal})");
+        var script = $"window.__sneakyKit && window.__sneakyKit('{who}', {literal})";
+        if (ready) _ = web.ExecuteScriptAsync(script);
+        // 상점의 미리보기도 같이 갈아입는다 — 거기 선 타자가 곧 타석에 설 타자다.
+        shop?.Send(script);
         KitChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 두 창에 실어 보낼 지갑. <b>손으로 조립하지 않고 직렬화한다</b> — 따옴표가 하나만 새도
+    /// window.sneaky 가 통째로 안 만들어지고, 게임은 조용히 핫키까지 잃는다.
+    /// </summary>
+    private string GearJson() => JsonSerializer.Serialize(new
+    {
+        points = Points,
+        owned,
+        equipped,
+        cheer,
+    });
+
+    /// <summary>
+    /// 지갑이 바뀌면 <b>두 창 모두</b>에 밀어 넣는다 — 게임에서 번 포인트가 열려 있는 상점에
+    /// 바로 보이고, 상점에서 바꿔 낀 배트가 바로 타석에 선다.
+    /// </summary>
+    private void PushGear()
+    {
+        WriteState();
+        var script = $"window.__sneakyGear && window.__sneakyGear({GearJson()})";
+        if (ready) _ = web.ExecuteScriptAsync(script);
+        shop?.Send(script);
+        GearChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 「배트 상점」. 오버레이와 달리 <b>마우스를 받는 보통 창</b>이다.
+    /// 한 번 만들면 들고 있다가 다시 띄운다.
+    /// </summary>
+    public void OpenShop()
+    {
+        if (shop is { IsDisposed: false })
+        {
+            shop.Show();
+            shop.BringToFront();
+            shop.Activate();
+            return;
+        }
+        shop = new ShopWindow(env, BridgeScript(), OnWebMessage);
+        shop.Show();
     }
 
     public Overlay()
@@ -417,7 +487,7 @@ sealed class Overlay : Form
         // 사용자 폴더에 캐시를 둔다. 실행 파일 옆에 쓰려 하면 Program Files 에서 막힌다.
         var data = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SneakyBaseball");
-        var env = await CoreWebView2Environment.CreateAsync(null, data);
+        env = await CoreWebView2Environment.CreateAsync(null, data);
         await web.EnsureCoreWebView2Async(env);
 
         var core = web.CoreWebView2;
@@ -449,10 +519,25 @@ sealed class Overlay : Form
         window.sneaky = {
           keyHint: '{{HoldKey.Hint}}',
           kits: { batter: {{batter}}, pitcher: {{pitcher}} },
-          getRecord: () => Promise.resolve({ bestMeters: {{BestMeters}} }),
-          saveRecord: (record) => window.chrome.webview.postMessage({
-            type: 'record', bestMeters: record && record.bestMeters,
+          getRecord: () => Promise.resolve({
+            bestMeters: {{BestMeters}}, bestGearedMeters: {{BestGearedMeters}},
           }),
+          saveRecord: (record) => window.chrome.webview.postMessage({
+            type: 'record',
+            bestMeters: record && record.bestMeters,
+            bestGearedMeters: record && record.bestGearedMeters,
+          }),
+          gear: {{GearJson()}},
+          earn: (e) => window.chrome.webview.postMessage({
+            type: 'earn', points: e.points, team: e.team,
+          }),
+          buyBat: (b) => window.chrome.webview.postMessage({
+            type: 'buy', key: b.key, price: b.price,
+          }),
+          equipBat: (key) => window.chrome.webview.postMessage({
+            type: 'equip', key,
+          }),
+          onGear: (handler) => { window.__sneakyGear = handler },
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
@@ -566,13 +651,62 @@ sealed class Overlay : Form
                 return;
             }
 
-            if (type != "record") return;
-            var meters = body.GetProperty("bestMeters").GetInt32();
-            if (meters <= BestMeters) return;
+            // 타구 하나가 번 점수. <b>셸은 더하기만 한다</b> — 얼마를 주는지는 게임이 정한다.
+            if (type == "earn")
+            {
+                var gained = body.GetProperty("points").GetInt32();
+                if (gained <= 0) return;
+                Points += gained;
+                // 응원은 유니폼을 입었을 때만 쌓이고, 한 번 쌓이면 줄지 않는다.
+                var team = body.TryGetProperty("team", out var t) ? t.GetString() : null;
+                if (!string.IsNullOrEmpty(team))
+                    cheer[team] = (cheer.TryGetValue(team, out var had) ? had : 0) + gained;
+                PushGear();
+                return;
+            }
 
-            BestMeters = meters;
+            // 배트 구매. <b>가격표는 셸에 두지 않는다</b> — 값은 상점(JS)이 순수 모듈에서
+            // 읽어 보내고, 여기서는 「가진 돈으로 되는가 / 이미 가졌는가」만 본다.
+            if (type == "buy")
+            {
+                var key = body.GetProperty("key").GetString();
+                var price = body.GetProperty("price").GetInt32();
+                if (key is null || owned.Contains(key) || price < 0 || Points < price) return;
+                Points -= price;
+                owned.Add(key);
+                equipped = key; // 사면 바로 낀다
+                PushGear();
+                return;
+            }
+
+            if (type == "equip")
+            {
+                var key = body.GetProperty("key").GetString();
+                if (key is null || !owned.Contains(key)) return;
+                equipped = key;
+                PushGear();
+                return;
+            }
+
+            if (type != "record") return;
+
+            var changed = false;
+            if (body.TryGetProperty("bestMeters", out var bm)
+                && bm.ValueKind == JsonValueKind.Number && bm.GetInt32() > BestMeters)
+            {
+                BestMeters = bm.GetInt32();
+                changed = true;
+            }
+            if (body.TryGetProperty("bestGearedMeters", out var gm)
+                && gm.ValueKind == JsonValueKind.Number && gm.GetInt32() > BestGearedMeters)
+            {
+                BestGearedMeters = gm.GetInt32();
+                changed = true;
+            }
+            if (!changed) return;
+
             WriteState();
-            RecordChanged?.Invoke(meters);
+            RecordChanged?.Invoke(BestMeters);
         }
         catch
         {
@@ -589,6 +723,18 @@ sealed class Overlay : Form
         {
             var json = JsonDocument.Parse(File.ReadAllText(statePath)).RootElement;
             BestMeters = json.TryGetProperty("bestMeters", out var m) ? m.GetInt32() : 0;
+            // 장비 기록이 없던 시절에 저장된 값에는 맨몸 기록만 있다 — 그게 곧 장비 기록이기도 하다.
+            BestGearedMeters = json.TryGetProperty("bestGearedMeters", out var gm2)
+                ? gm2.GetInt32() : BestMeters;
+            Points = json.TryGetProperty("points", out var pt) ? pt.GetInt32() : 0;
+            owned = json.TryGetProperty("owned", out var ow) && ow.ValueKind == JsonValueKind.Array
+                ? ow.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x != "").ToList()
+                : new List<string> { DefaultBat };
+            if (!owned.Contains(DefaultBat)) owned.Insert(0, DefaultBat);
+            equipped = json.TryGetProperty("equipped", out var eq) ? eq.GetString() ?? DefaultBat : DefaultBat;
+            cheer = json.TryGetProperty("cheer", out var ch) && ch.ValueKind == JsonValueKind.Object
+                ? ch.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt32())
+                : new Dictionary<string, int>();
             BatterKit = json.TryGetProperty("batterKit", out var b) ? Stored(b.GetString()) : DefaultBatterKit;
             PitcherKit = json.TryGetProperty("pitcherKit", out var p) ? Stored(p.GetString()) : DefaultPitcherKit;
             HoldKey = HoldKeyOption.Find(json.TryGetProperty("controlKey", out var c) ? c.GetString() : null);
@@ -606,6 +752,11 @@ sealed class Overlay : Form
             File.WriteAllText(statePath, JsonSerializer.Serialize(new
             {
                 bestMeters = BestMeters,
+                bestGearedMeters = BestGearedMeters,
+                points = Points,
+                owned,
+                equipped,
+                cheer,
                 batterKit = BatterKit ?? NoKit,
                 pitcherKit = PitcherKit ?? NoKit,
                 controlKey = HoldKey.Id,
@@ -614,5 +765,75 @@ sealed class Overlay : Form
             }));
         }
         catch { }
+    }
+}
+
+/// <summary>
+/// 배트 상점 창. <b>오버레이가 아니다</b> — 창틀이 있고, 마우스를 그대로 받고,
+/// 클릭 통과에 예외를 파지 않는다. 게임 창과 <b>같은 브리지</b>를 얹어서
+/// 상점(JS)이 셸에 사고 끼우겠다고 말할 수 있게 한다.
+/// </summary>
+sealed class ShopWindow : Form
+{
+    private readonly WebView2 web = new();
+    private readonly CoreWebView2Environment? env;
+    private readonly string bridge;
+    private readonly EventHandler<CoreWebView2WebMessageReceivedEventArgs> onMessage;
+    private bool ready;
+
+    public ShopWindow(CoreWebView2Environment? env, string bridge,
+                      EventHandler<CoreWebView2WebMessageReceivedEventArgs> onMessage)
+    {
+        this.env = env;
+        this.bridge = bridge;
+        this.onMessage = onMessage;
+
+        Text = "배트 상점";
+        // 배트 다섯 장이 한 줄에 들어오는 너비. 줄이 갈리면 마지막 배트만 외따로 떨어진다.
+        ClientSize = new Size(920, 560);
+        StartPosition = FormStartPosition.CenterScreen;
+        MinimumSize = new Size(420, 380);
+        ShowInTaskbar = true;
+
+        web.Dock = DockStyle.Fill;
+        Controls.Add(web);
+        _ = InitAsync();
+    }
+
+    private async Task InitAsync()
+    {
+        var environment = env ?? await CoreWebView2Environment.CreateAsync(null, Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SneakyBaseball"));
+        await web.EnsureCoreWebView2Async(environment);
+
+        var core = web.CoreWebView2;
+        core.SetVirtualHostNameToFolderMapping(
+            "sneaky.app", Path.Combine(AppContext.BaseDirectory, "web"),
+            CoreWebView2HostResourceAccessKind.Allow);
+        core.Settings.AreDefaultContextMenusEnabled = false;
+        core.Settings.IsStatusBarEnabled = false;
+        core.Settings.AreDevToolsEnabled = false;
+
+        await core.AddScriptToExecuteOnDocumentCreatedAsync(bridge);
+        core.WebMessageReceived += onMessage;
+        core.Navigate("https://sneaky.app/shop/index.html");
+        ready = true;
+    }
+
+    public void Send(string script)
+    {
+        if (ready) _ = web.ExecuteScriptAsync(script);
+    }
+
+    /// <summary>닫아도 없애지 않고 숨긴다 — 다시 열 때 캔버스를 처음부터 다시 그리지 않는다.</summary>
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+        base.OnFormClosing(e);
     }
 }

@@ -1,0 +1,160 @@
+/* 상점 창. 오버레이가 아니라 보통 창이라, 여기서는 배경을 칠한다. */
+
+:root {
+  --ink: #16171b;
+  --soft: #6b6f78;
+  --line: #e2e3e7;
+  --card: #ffffff;
+  --bg: #f4f4f6;
+  --accent: #1f6feb;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f2f3f5;
+    --soft: #9aa0aa;
+    --line: #2c2e34;
+    --card: #1c1e22;
+    --bg: #131418;
+    --accent: #58a6ff;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  max-width: 940px;
+  padding: 20px 22px 16px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.5 ui-rounded, -apple-system, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.label {
+  display: block;
+  font-size: 11px;
+  color: var(--soft);
+  letter-spacing: 0.02em;
+}
+
+.purse strong {
+  font: 700 30px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: -0.02em;
+}
+
+.purse .unit {
+  font: 600 14px ui-monospace, Menlo, monospace;
+  color: var(--soft);
+  margin-left: 2px;
+}
+
+.cheer ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: right;
+}
+
+.cheer { text-align: right; }
+
+.cheer li {
+  font: 600 12px/1.6 ui-monospace, Menlo, monospace;
+  color: var(--soft);
+}
+
+.cheer li b { color: var(--ink); }
+
+.cheer .none { font-family: inherit; font-weight: 400; }
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.bat {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.bat.equipped { border-color: var(--accent); }
+
+.bat canvas {
+  /* 타자 그림은 게임과 같은 코드로 그린다 — 상점에서 본 배트가 타석에서도 그 배트다. */
+  width: 96px;
+  height: 118px;
+  /* **밝은 판을 깔고 그린다.** 선수는 검은 실루엣이라 어두운 카드 위에서는 통째로 사라진다.
+     게임에서는 흰 글로우가 그 일을 하는데, 여기서는 배경이 있으니 판이 더 깨끗하다. */
+  background: #e9eaee;
+  border-radius: 10px;
+}
+
+.bat h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.bat .note {
+  margin: -6px 0 0;
+  font-size: 11px;
+  color: var(--soft);
+}
+
+.bat dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 8px;
+  font: 500 11px/1.5 ui-monospace, Menlo, monospace;
+  color: var(--soft);
+}
+
+.bat dd { margin: 0; text-align: right; color: var(--ink); }
+
+button {
+  width: 100%;
+  padding: 7px 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: 600 12px ui-rounded, -apple-system, sans-serif;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: transparent;
+  color: var(--soft);
+  border: 1px solid var(--line);
+  cursor: default;
+}
+
+button.own { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+
+footer {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--soft);
+}
+
+footer b { color: var(--ink); font-weight: 600; }

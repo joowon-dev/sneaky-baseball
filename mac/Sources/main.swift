@@ -89,6 +89,13 @@ private let pitcherSteps: [(x: Double, title: String)] = [
     (0.90, "멀게"),
     (0.93, "제일 멀게"),
 ]
+private let gearedRecordKey = "bestGearedMeters"
+/// 지갑·응원·가진 배트. 유니폼·투수 거리와 같은 자리에 둔다 — 창이 둘이라 진실이 하나여야 한다.
+private let pointsKey = "points"
+private let ownedKey = "ownedBats"
+private let equippedKey = "equippedBat"
+private let cheerKey = "cheer"
+private let defaultBat = "bare"
 private let batterKitKey = "batterKit"
 private let pitcherKitKey = "pitcherKit"
 private let controlKeyKey = "controlKey"
@@ -167,6 +174,9 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
+    /// 상점 — 오버레이가 아니라 보통 창이다. 클릭 통과에 예외를 파지 않는다.
+    private var shopWindow: NSWindow?
+    private var shopWebView: WKWebView?
     private var holdTimer: Timer?
     private var hotKeys: [EventHotKeyRef?] = []
     private var swingHotKey: EventHotKeyRef?
@@ -186,6 +196,60 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var bestMeters: Int {
         get { UserDefaults.standard.integer(forKey: recordKey) }
         set { UserDefaults.standard.set(newValue, forKey: recordKey) }
+    }
+
+    /// 장비를 끼고 세운 기록. 맨몸 기록과 따로 둔다 — 배트를 사면 홈런이 쉬워지므로
+    /// 한 칸에 섞으면 옛 기록과 새 기록의 잣대가 달라진다.
+    private var bestGearedMeters: Int {
+        get { UserDefaults.standard.integer(forKey: gearedRecordKey) }
+        set { UserDefaults.standard.set(newValue, forKey: gearedRecordKey) }
+    }
+
+    /// 지갑. 안타·홈런으로 쌓이고 배트를 사면 준다.
+    private var points: Int {
+        get { UserDefaults.standard.integer(forKey: pointsKey) }
+        set { UserDefaults.standard.set(max(0, newValue), forKey: pointsKey) }
+    }
+
+    /// 가진 배트. 맨손은 언제나 가지고 있다.
+    private var ownedBats: [String] {
+        get {
+            let saved = UserDefaults.standard.stringArray(forKey: ownedKey) ?? []
+            return saved.contains(defaultBat) ? saved : [defaultBat] + saved
+        }
+        set { UserDefaults.standard.set(newValue, forKey: ownedKey) }
+    }
+
+    private var equippedBat: String {
+        get { UserDefaults.standard.string(forKey: equippedKey) ?? defaultBat }
+        set { UserDefaults.standard.set(newValue, forKey: equippedKey) }
+    }
+
+    /// 구단별 응원 원장. **줄어드는 일이 없다** — 배트를 사도 그대로다.
+    private var cheer: [String: Int] {
+        get { UserDefaults.standard.dictionary(forKey: cheerKey) as? [String: Int] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: cheerKey) }
+    }
+
+    /// 두 창에 실어 보낼 지갑. **손으로 조립하지 않고 직렬화한다** — 따옴표가 하나만 새도
+    /// window.sneaky 가 통째로 안 만들어지고, 게임은 조용히 핫키까지 잃는다.
+    private func gearJSON() -> String {
+        let payload: [String: Any] = [
+            "points": points, "owned": ownedBats, "equipped": equippedBat, "cheer": cheer,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let text = String(data: data, encoding: .utf8)
+        else { return "{}" }
+        return text
+    }
+
+    /// 지갑이 바뀌면 **두 창 모두**에 밀어 넣는다 — 게임에서 번 포인트가 열려 있는 상점에
+    /// 바로 보이고, 상점에서 바꿔 낀 배트가 바로 타석에 선다.
+    private func pushGear() {
+        let script = "window.__sneakyGear && window.__sneakyGear(\(gearJSON()))"
+        webView.evaluateJavaScript(script)
+        shopWebView?.evaluateJavaScript(script)
+        refreshMenu()
     }
 
     /// 투수가 선 자리(필드 상자 가로 비율). 플레이어가 드래그로 옮긴다.
@@ -219,7 +283,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
         // 창이 숨어 있어도 밀어 넣는다 — 다시 띄웠을 때 이미 갈아입고 있어야 한다.
         let literal = key.map { "'\($0)'" } ?? "null"
-        webView.evaluateJavaScript("window.__sneakyKit && window.__sneakyKit('\(who)', \(literal))")
+        let script = "window.__sneakyKit && window.__sneakyKit('\(who)', \(literal))"
+        webView.evaluateJavaScript(script)
+        // 상점의 미리보기도 같이 갈아입는다 — 거기 선 타자가 곧 타석에 설 타자다.
+        shopWebView?.evaluateJavaScript(script)
         refreshMenu()
     }
 
@@ -273,15 +340,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.isReleasedWhenClosed = false
 
-        let config = WKWebViewConfiguration()
-        let web = Bundle.main.resourceURL!.appendingPathComponent("web")
-        config.setURLSchemeHandler(WebAssetHandler(root: web), forURLScheme: webScheme)
-        config.userContentController.add(self, name: "sneaky")
-        config.userContentController.addUserScript(
-            WKUserScript(source: bridgeScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true)
-        )
-
-        webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
+        webView = WKWebView(frame: window.contentView!.bounds, configuration: makeConfig())
         webView.autoresizingMask = [.width, .height]
         // 웹뷰 자체 배경을 지워야 창의 투명이 살아난다.
         webView.setValue(false, forKey: "drawsBackground")
@@ -289,6 +348,47 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
 
         window.contentView?.addSubview(webView)
         window.orderFrontRegardless() // 포커스는 절대 가져가지 않는다
+    }
+
+    /// 웹뷰 설정 한 벌. 게임 창과 상점 창이 **같은 브리지**를 쓴다 —
+    /// WKWebViewConfiguration 은 창마다 새로 만들어야 해서 함수로 둔다.
+    private func makeConfig() -> WKWebViewConfiguration {
+        let config = WKWebViewConfiguration()
+        let web = Bundle.main.resourceURL!.appendingPathComponent("web")
+        config.setURLSchemeHandler(WebAssetHandler(root: web), forURLScheme: webScheme)
+        config.userContentController.add(self, name: "sneaky")
+        config.userContentController.addUserScript(
+            WKUserScript(source: bridgeScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
+        return config
+    }
+
+    /// 「배트 상점」. 오버레이와 달리 **마우스를 받는 보통 창**이다.
+    /// 한 번 만들면 들고 있다가 다시 띄운다 — 열 때마다 새로 만들면 캔버스를 매번 다시 그린다.
+    @objc private func openShop() {
+        if let shopWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            shopWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // 배트 다섯 장이 한 줄에 들어오는 너비. 줄이 갈리면 마지막 배트만 외따로 떨어진다.
+        let frame = NSRect(x: 0, y: 0, width: 920, height: 560)
+        let win = NSWindow(contentRect: frame, styleMask: [.titled, .closable, .miniaturizable],
+                           backing: .buffered, defer: false)
+        win.title = "배트 상점"
+        win.isReleasedWhenClosed = false
+        win.center()
+
+        let web = WKWebView(frame: win.contentView!.bounds, configuration: makeConfig())
+        web.autoresizingMask = [.width, .height]
+        web.load(URLRequest(url: URL(string: "\(webScheme)://app/shop/index.html")!))
+        win.contentView?.addSubview(web)
+
+        shopWindow = win
+        shopWebView = web
+        NSApp.activate(ignoringOtherApps: true)
+        win.makeKeyAndOrderFront(nil)
     }
 
     /// 렌더러가 기대하는 window.sneaky 를 그대로 만들어 준다 (Electron preload 와 같은 모양).
@@ -299,10 +399,25 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         window.sneaky = {
           keyHint: '\(controlKey.hint)',
           kits: { batter: \(batter), pitcher: \(pitcher) },
-          getRecord: () => Promise.resolve({ bestMeters: \(bestMeters) }),
-          saveRecord: (record) => window.webkit.messageHandlers.sneaky.postMessage({
-            type: 'record', bestMeters: record && record.bestMeters,
+          getRecord: () => Promise.resolve({
+            bestMeters: \(bestMeters), bestGearedMeters: \(bestGearedMeters),
           }),
+          saveRecord: (record) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'record',
+            bestMeters: record && record.bestMeters,
+            bestGearedMeters: record && record.bestGearedMeters,
+          }),
+          gear: \(gearJSON()),
+          earn: (e) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'earn', points: e.points, team: e.team,
+          }),
+          buyBat: (b) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'buy', key: b.key, price: b.price,
+          }),
+          equipBat: (key) => window.webkit.messageHandlers.sneaky.postMessage({
+            type: 'equip', key,
+          }),
+          onGear: (handler) => { window.__sneakyGear = handler },
           onSwing: (handler) => { window.__sneakySwing = handler },
           onHint: (handler) => { window.__sneakyHint = handler },
           onHold: (handler) => { window.__sneakyHold = handler },
@@ -337,8 +452,17 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private func refreshMenu() {
         let menu = NSMenu()
         menu.addItem(disabled("최고 비거리  \(bestMeters)m"))
+        if bestGearedMeters > bestMeters {
+            menu.addItem(disabled("장비 기록  \(bestGearedMeters)m"))
+        }
+        menu.addItem(disabled("보유 포인트  \(points)P"))
         menu.addItem(disabled("\(controlKey.title) 을 누르고 있는 동안 투구"))
         menu.addItem(disabled("스윙  \(controlKey.title) + Space"))
+        menu.addItem(.separator())
+
+        let shop = NSMenuItem(title: "배트 상점…", action: #selector(openShop), keyEquivalent: "")
+        shop.target = self
+        menu.addItem(shop)
         menu.addItem(.separator())
 
         menu.addItem(kitMenu(title: "타자 팀", who: "batter"))
@@ -636,13 +760,50 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             return
         }
 
-        guard body["type"] as? String == "record",
-              let meters = body["bestMeters"] as? Int,
-              meters > bestMeters
-        else { return }
+        // 타구 하나가 번 점수. **셸은 더하기만 한다** — 얼마를 주는지는 게임이 정한다.
+        if body["type"] as? String == "earn", let gained = body["points"] as? Int, gained > 0 {
+            points += gained
+            // 응원은 유니폼을 입었을 때만 쌓이고, 한 번 쌓이면 줄지 않는다.
+            if let team = body["team"] as? String, !team.isEmpty {
+                var ledger = cheer
+                ledger[team] = (ledger[team] ?? 0) + gained
+                cheer = ledger
+            }
+            pushGear()
+            return
+        }
 
-        bestMeters = meters
-        refreshMenu()
+        // 배트 구매. **가격표는 셸에 두지 않는다** — 값은 상점(JS)이 순수 모듈에서 읽어
+        // 보내고, 여기서는 「가진 돈으로 되는가 / 이미 가졌는가」만 본다.
+        if body["type"] as? String == "buy",
+           let key = body["key"] as? String, let price = body["price"] as? Int {
+            guard !ownedBats.contains(key), price >= 0, points >= price else { return }
+            points -= price
+            ownedBats = ownedBats + [key]
+            equippedBat = key // 사면 바로 낀다
+            pushGear()
+            return
+        }
+
+        if body["type"] as? String == "equip", let key = body["key"] as? String {
+            guard ownedBats.contains(key) else { return }
+            equippedBat = key
+            pushGear()
+            return
+        }
+
+        guard body["type"] as? String == "record" else { return }
+
+        var changed = false
+        if let meters = body["bestMeters"] as? Int, meters > bestMeters {
+            bestMeters = meters
+            changed = true
+        }
+        if let meters = body["bestGearedMeters"] as? Int, meters > bestGearedMeters {
+            bestGearedMeters = meters
+            changed = true
+        }
+        if changed { refreshMenu() }
     }
 
     /// 메뉴 막대가 있는 주 화면. NSScreen.main 은 "키 윈도우가 있는 화면"이라

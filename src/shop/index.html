@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'" />
+    <title>배트 상점</title>
+    <link rel="stylesheet" href="shop.css" />
+  </head>
+  <body>
+    <!-- 오버레이가 아니다. 마우스를 받는 보통 창이라 여기서만 마음껏 클릭한다. -->
+    <header>
+      <div class="purse">
+        <span class="label">보유 포인트</span>
+        <strong id="points">0</strong><span class="unit">P</span>
+      </div>
+      <div class="cheer">
+        <span class="label">내가 넣은 응원</span>
+        <ul id="cheer"></ul>
+      </div>
+    </header>
+
+    <main id="bats"></main>
+
+    <footer>
+      안타·홈런을 치면 포인트가 쌓입니다. 홈런은 비거리 m 그대로, 안타는 그 0.4배.
+      <b>응원 포인트는 배트를 사도 줄지 않습니다.</b>
+    </footer>
+
+    <script type="module" src="shop.js"></script>
+  </body>
+</html>
